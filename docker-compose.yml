@@ -1,0 +1,32 @@
+services:
+  mdv:
+    build: .
+    image: mdv:latest
+    ports:
+      - "8080:8080"
+    volumes:
+      # A named volume keeps notes inside Docker's VM (out of reach of host AV).
+      # Swap for a bind mount (e.g. ./vault:/vault) to edit an existing folder.
+      - vault:/vault
+    environment:
+      # Require a password (strongly recommended if reachable from other machines).
+      # MDV_PASSWORD: change-me
+
+      # Git identity for commits made from the app.
+      MDV_GIT_NAME: mdv
+      MDV_GIT_EMAIL: mdv@localhost
+
+      # Remote to sync with. An HTTPS URL with a GitHub fine-grained token
+      # (Contents: read & write) is the simplest option:
+      # MDV_GIT_REMOTE: https://<your-username>:<token>@github.com/<your-username>/<notes>.git
+
+      # Commit every 10 minutes when there are changes; also pull + push if true.
+      MDV_AUTO_COMMIT: 10m
+      MDV_AUTO_PUSH: "true"
+
+      # Where pasted images go when the vault has no Obsidian setting for it.
+      # MDV_ATTACHMENTS: attachments
+    restart: unless-stopped
+
+volumes:
+  vault:

@@ -1,0 +1,4 @@
+**/node_modules
+internal/server/dist
+.git
+*.exe
