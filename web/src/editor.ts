@@ -30,6 +30,7 @@ import { findLanguage } from "./codelang";
 import { basename, dirname, isImage, isNote, stripMd, vaultFiles } from "./links";
 import { LinkHost, linkHandlers, livePreview } from "./livepreview";
 import { settings } from "./settings";
+import { nextCell, prevCell, tableEnter } from "./tables";
 import { toast } from "./ui";
 
 // Colours come from CSS variables so themes are pure CSS.
@@ -248,6 +249,10 @@ export function editorExtensions(hooks: EditorHooks, host: LinkHost, mode: EditM
       { key: "Mod-`", run: toggleWrap("`") },
       { key: "Mod-k", run: insertLink },
       ...completionKeymap,
+      // In a table: Tab / Shift-Tab move between cells, Enter to the next row.
+      { key: "Tab", run: nextCell },
+      { key: "Shift-Tab", run: prevCell },
+      { key: "Enter", run: tableEnter },
       ...closeBracketsKeymap,
       ...markdownKeymap, // Enter continues lists, Backspace removes list marks
       ...defaultKeymap,

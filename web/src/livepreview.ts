@@ -9,7 +9,8 @@ import { rawUrl } from "./api";
 import { embedVersion } from "./embeds";
 import { dirname, isImage, isNote, normalize, parseSize, parseWiki, stripMd, vaultFiles, WIKI_RE } from "./links";
 import { settings } from "./settings";
-import { copyButton } from "./ui";
+import * as tables from "./tables";
+import { contextMenu, copyButton, MenuItem } from "./ui";
 
 export interface LinkHost {
   /** Path of the note being edited. */
@@ -206,7 +207,8 @@ const line = (cls: string) => Decoration.line({ class: cls });
  */
 const touched = StateField.define<boolean>({
   create: () => false,
-  update: (v, tr) => v || tr.docChanged || !!tr.selection,
+  // Table edits from the rendered widget's buttons don't count.
+  update: (v, tr) => v || !!tr.selection || (tr.docChanged && !tr.isUserEvent("input.table")),
 });
 
 function activeLines(state: EditorState): Set<number> {
@@ -729,12 +731,21 @@ class TableWidget extends WidgetType {
     if (h) wrap.style.minHeight = h + "px";
     withReader((r) => {
       r.render(wrap, this.src, this.path, 1);
+      addTableButtons(wrap, view);
       wrap.style.minHeight = "";
       view.requestMeasure();
     });
     rememberHeight(key, wrap, view);
+    wrap.oncontextmenu = (e) => {
+      const cell = cellOf(e.target as HTMLElement);
+      if (!cell) return;
+      e.preventDefault();
+      contextMenu(e.clientX, e.clientY, tableMenu(view, wrap, cell));
+    };
     wrap.onmousedown = (e) => {
+      if (e.button === 2) e.preventDefault(); // the context menu shouldn't move the cursor
       if (e.button !== 0) return;
+      if ((e.target as HTMLElement).closest(".cm-lp-table-add")) return;
       if (followInBlock(e, this.host)) return;
       // Clicking a cell puts the cursor in that cell's source.
       e.preventDefault();
@@ -763,6 +774,72 @@ class TableWidget extends WidgetType {
   ignoreEvent() {
     return true;
   }
+}
+
+/** Row (0 = header) and column of a rendered table cell. */
+function cellOf(el: HTMLElement): tables.CellRef | null {
+  const cell = el.closest("td, th");
+  const tr = cell?.parentElement as HTMLTableRowElement | null;
+  if (!cell || !tr) return null;
+  const inBody = tr.parentElement?.tagName === "TBODY";
+  return { row: inBody ? tr.sectionRowIndex + 1 : 0, col: [...tr.children].indexOf(cell) };
+}
+
+/** Apply a change to the table a widget shows; it stays rendered. */
+function editTable(view: EditorView, wrap: HTMLElement, f: (t: tables.Table) => unknown) {
+  const t = tables.tableAt(view.state, view.posAtDOM(wrap));
+  if (!t || f(t) === false) return;
+  tables.writeTable(view, t);
+}
+
+/** "+" buttons to add a column (right edge) and a row (bottom edge). */
+function addTableButtons(wrap: HTMLElement, view: EditorView) {
+  const table = wrap.querySelector("table");
+  if (!table) return;
+  const box = document.createElement("div");
+  box.className = "cm-lp-table-box";
+  table.replaceWith(box);
+  box.append(table);
+  const button = (cls: string, title: string, run: () => void) => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "cm-lp-table-add " + cls;
+    b.title = title;
+    b.tabIndex = -1;
+    b.textContent = "+";
+    b.onmousedown = (e) => e.preventDefault(); // keep the cursor where it is
+    b.onclick = (e) => {
+      e.preventDefault();
+      run();
+    };
+    box.append(b);
+  };
+  button("col", "Add column", () => editTable(view, wrap, (t) => tables.insertCol(t, t.aligns.length)));
+  button("row", "Add row", () => editTable(view, wrap, (t) => tables.insertRow(t, t.rows.length)));
+}
+
+function tableMenu(view: EditorView, wrap: HTMLElement, { row, col }: tables.CellRef): MenuItem[] {
+  const t = tables.tableAt(view.state, view.posAtDOM(wrap));
+  if (!t) return [];
+  const edit = (f: (t: tables.Table) => unknown) => () => editTable(view, wrap, f);
+  const items: MenuItem[] = [];
+  if (row > 0) items.push({ label: "Insert row above", run: edit((t) => tables.insertRow(t, row)) });
+  items.push(
+    { label: "Insert row below", run: edit((t) => tables.insertRow(t, row + 1)) },
+    { label: "Insert column left", run: edit((t) => tables.insertCol(t, col)) },
+    { label: "Insert column right", run: edit((t) => tables.insertCol(t, col + 1)) },
+  );
+  if (row > 1) items.push({ label: "Move row up", run: edit((t) => tables.moveRow(t, row, -1)) });
+  if (row > 0 && row < t.rows.length - 1) items.push({ label: "Move row down", run: edit((t) => tables.moveRow(t, row, 1)) });
+  if (col > 0) items.push({ label: "Move column left", run: edit((t) => tables.moveCol(t, col, -1)) });
+  if (col < t.aligns.length - 1) items.push({ label: "Move column right", run: edit((t) => tables.moveCol(t, col, 1)) });
+  for (const a of ["left", "center", "right"] as const) {
+    if (t.aligns[col] === a) continue;
+    items.push({ label: "Align column " + a, run: edit((t) => (t.aligns[col] = a)) });
+  }
+  if (row > 0) items.push({ label: "Delete row", danger: true, run: edit((t) => tables.deleteRow(t, row)) });
+  if (t.aligns.length > 1) items.push({ label: "Delete column", danger: true, run: edit((t) => tables.deleteCol(t, col)) });
+  return items;
 }
 
 class NoteEmbedWidget extends WidgetType {
@@ -838,6 +915,9 @@ function blockWidgets(host: LinkHost) {
         if (!anyActive(a.number, b.number)) {
           const src = doc.sliceString(a.from, b.to);
           out.push(Decoration.replace({ widget: new TableWidget(src, from, host), block: true }).range(a.from, b.to));
+        } else {
+          // Being edited: monospace, so the aligned pipes line up.
+          for (let n = a.number; n <= b.number; n++) out.push(line("cm-lp-table-src").range(doc.line(n).from));
         }
         return false;
       },
