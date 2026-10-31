@@ -126,7 +126,7 @@ export class Tabs {
   private host(t: Tab): LinkHost {
     return {
       path: () => t.path,
-      follow: (target, wiki, newTab) => this.follow(t, target, wiki, newTab),
+      follow: (target, wiki, newTab, from) => this.follow(t, target, wiki, newTab, from),
       openFile: (path, newTab) => this.open(path, { newTab }),
     };
   }
@@ -257,8 +257,8 @@ export class Tabs {
     }
   }
 
-  /** Follow a link written in tab t's note. */
-  private async follow(t: Tab, target: string, wiki: boolean, newTab: boolean) {
+  /** Follow a link written in tab t's note (or in a note embedded in it, `from`). */
+  private async follow(t: Tab, target: string, wiki: boolean, newTab: boolean, from = t.path) {
     if (!wiki && /^[a-z][a-z0-9+.-]*:/i.test(target)) {
       window.open(target, "_blank", "noopener,noreferrer");
       return;
@@ -275,19 +275,20 @@ export class Tabs {
         heading = decodeURIComponent(heading);
       } catch {}
     }
+    if (!name && from !== t.path) name = from; // [[#Heading]] inside an embedded note
     if (!name) {
       // [[#Heading]] within the same note.
       if (heading) this.gotoHeading(heading);
       return;
     }
-    let path = vaultFiles.resolve(name, t.path, wiki);
+    let path = vaultFiles.resolve(name, from, wiki);
     if (!path) {
       if (!wiki) {
         toast(new Error(`No such file: ${name}`));
         return;
       }
       // Unresolved wikilink: create the note next to the current one.
-      const rel = name.includes("/") ? name : (dirname(t.path) ? dirname(t.path) + "/" : "") + name;
+      const rel = name.includes("/") ? name : (dirname(from) ? dirname(from) + "/" : "") + name;
       const p = normalize(/\.[^/.]+$/.test(basename(rel)) ? rel : rel + ".md");
       if (!p) return;
       try {
@@ -436,12 +437,14 @@ export class Tabs {
         return;
       }
       const a = el.closest<HTMLAnchorElement>("a");
+      // Links inside an embedded note are relative to that note.
+      const from = el.closest<HTMLElement>("[data-embed-from]")?.dataset.embedFrom ?? t.path;
       if (a?.dataset.target !== undefined) {
         e.preventDefault();
-        this.follow(t, a.dataset.target, true, mod);
+        this.follow(t, a.dataset.target, true, mod, from);
       } else if (a?.dataset.href) {
         e.preventDefault();
-        this.follow(t, a.dataset.href, false, mod);
+        this.follow(t, a.dataset.href, false, mod, from);
       } else if (el instanceof HTMLImageElement && el.dataset.path && mod) {
         this.open(el.dataset.path, { newTab: e.shiftKey });
       }
@@ -516,6 +519,8 @@ export class Tabs {
     } catch {
       this.view.dispatch({ effects: (snap = top) }); // snapshot no longer fits the document
     }
+    // Embedded notes may have changed while this tab was in the background.
+    this.view.dispatch({ effects: refreshDecorations.of(null) });
     this.readerPath = ""; // the reading view restores its own position on next render
   }
 
@@ -571,6 +576,13 @@ export class Tabs {
     }
     this.renderTabs();
     this.renderStatus();
+  }
+
+  /** Current text of a note open in a tab (including unsaved edits), else null. */
+  textOf(path: string): string | null {
+    const t = this.tabs.find((x) => x.path === path);
+    if (!t || t.kind !== "note") return null;
+    return (t === this.cur() ? this.view.state.doc : t.state.doc).toString();
   }
 
   /** Replace the active note's text as an undoable edit (e.g. restoring a version). */

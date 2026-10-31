@@ -7,11 +7,14 @@ with git.
 - Live-preview editor (syntax hidden away from the cursor), source mode and reading view
 - `[[wikilinks]]` with autocomplete, backlinks, and link updating on rename
 - Images: paste or drop to upload, `![[image.png|300]]` embeds, image/PDF viewer
+- Note embeds: `![[note]]`, `![[note#Heading]]`, `![[note#^block]]`; tables render in live preview
+- Bookmarks for notes and folders (synced with the vault), recent searches
 - File tree with keyboard navigation, filter, sorting and drag & drop
 - Quick switcher (`Ctrl+P`) and full-text vault search (`Ctrl+Shift+F`)
 - File map: heading outline and scroll map beside the editor
 - Syntax highlighting in ```` ```language ```` code blocks (bash, powershell/ps1, python, sql, yaml, …)
-- Git panel: commit, pull, push, sync, per-note history with restore
+- Git panel: commit, pull, push, sync, per-note history with diffs and restore
+- Works on phones: the sidebar becomes a drawer
 - Live updates when files change on disk
 - Dark-first themes, optional password, installable as an app
 
@@ -96,6 +99,7 @@ Pulls merge rather than rebase. If a merge conflicts, the conflicting notes get
 | `Ctrl+Shift+H` | Highlight |
 | `Ctrl+\` | Toggle sidebar |
 | `Alt+M` | Toggle the file map (outline + scroll map) |
+| `Alt+B` | Bookmark / unbookmark the current note |
 | `Ctrl+,` | Settings |
 
 Clicking a note opens it in the current tab; `Ctrl`+click or middle-click opens

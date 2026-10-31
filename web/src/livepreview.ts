@@ -6,6 +6,7 @@ import { EditorState, Range, StateEffect, StateField, Text } from "@codemirror/s
 import { Decoration, DecorationSet, EditorView, ViewPlugin, ViewUpdate, WidgetType } from "@codemirror/view";
 import { SyntaxNode } from "@lezer/common";
 import { rawUrl } from "./api";
+import { embedVersion } from "./embeds";
 import { dirname, isImage, isNote, normalize, parseSize, parseWiki, stripMd, vaultFiles, WIKI_RE } from "./links";
 import { settings } from "./settings";
 import { copyButton } from "./ui";
@@ -13,8 +14,8 @@ import { copyButton } from "./ui";
 export interface LinkHost {
   /** Path of the note being edited. */
   path: () => string;
-  /** Follow a link target; newTab for Ctrl/Cmd-click. */
-  follow: (target: string, wiki: boolean, newTab: boolean) => void;
+  /** Follow a link target; newTab for Ctrl/Cmd-click. `from`: the note the link is written in, if not this one. */
+  follow: (target: string, wiki: boolean, newTab: boolean, from?: string) => void;
   /** Open an image in the viewer. */
   openFile: (path: string, newTab: boolean) => void;
 }
@@ -137,6 +138,57 @@ class RuleWidget extends WidgetType {
     const s = document.createElement("span");
     s.className = "cm-lp-hr";
     return s;
+  }
+}
+
+// ---------- foldable callouts ("> [!note]-" starts folded, "+" open) ----------
+
+/** Flip a foldable callout, identified by the start of its title line. */
+const toggleCallout = StateEffect.define<number>();
+
+/** Title lines of callouts the user has flipped away from their default state. */
+const calloutToggles = StateField.define<Set<number>>({
+  create: () => new Set(),
+  update(value, tr) {
+    let next = value;
+    if (tr.docChanged && value.size) next = new Set([...value].map((p) => tr.changes.mapPos(p)));
+    for (const e of tr.effects) {
+      if (!e.is(toggleCallout)) continue;
+      next = new Set(next);
+      next.has(e.value) ? next.delete(e.value) : next.add(e.value);
+    }
+    return next;
+  },
+});
+
+const CALLOUT_RE = /^(\s*>\s*)\[!([\w-]+)\]([+-]?)/;
+
+function calloutFolded(state: EditorState, titleFrom: number, marker: string) {
+  return (marker === "-") !== !!state.field(calloutToggles, false)?.has(titleFrom);
+}
+
+class FoldToggleWidget extends WidgetType {
+  constructor(readonly folded: boolean) {
+    super();
+  }
+  eq(o: FoldToggleWidget) {
+    return o.folded === this.folded;
+  }
+  toDOM(view: EditorView) {
+    const b = document.createElement("button");
+    b.className = "cm-lp-fold" + (this.folded ? " folded" : "");
+    b.title = this.folded ? "Expand" : "Collapse";
+    b.tabIndex = -1;
+    b.onmousedown = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const line = view.state.doc.lineAt(view.posAtDOM(b));
+      view.dispatch({ effects: [toggleCallout.of(line.from), refreshDecorations.of(null)] });
+    };
+    return b;
+  }
+  ignoreEvent() {
+    return true;
   }
 }
 
@@ -574,6 +626,11 @@ function build(view: EditorView, host: LinkHost): DecorationSet {
           hideRange(a, a + 2);
           hideRange(close, b);
         }
+        // Foldable callout with a body: a chevron at the end of the title.
+        if (callout[3] && ln < doc.lines && /^\s*>/.test(doc.line(ln + 1).text)) {
+          const folded = calloutFolded(state, l.from, callout[3]);
+          out.push(Decoration.widget({ widget: new FoldToggleWidget(folded), side: -1 }).range(l.to));
+        }
       }
 
       const hl = /==([^=\n]+)==/g;
@@ -596,6 +653,254 @@ function build(view: EditorView, host: LinkHost): DecorationSet {
     }
   }
   return Decoration.set(out, true);
+}
+
+// ---------- tables and note embeds (block widgets) ----------
+
+// Both render through the reading view's markdown renderer, loaded on demand.
+let readerMod: typeof import("./reader") | null = null;
+let readerLoading: Promise<typeof import("./reader")> | null = null;
+function withReader(f: (r: typeof import("./reader")) => void) {
+  if (readerMod) return f(readerMod);
+  (readerLoading ??= import("./reader").then((r) => (readerMod = r))).then(f);
+}
+
+/** Last rendered height of block widgets, so re-created ones don't jump. */
+const blockHeights = new Map<string, number>();
+
+function rememberHeight(key: string, el: HTMLElement, view: EditorView) {
+  const ro = new ResizeObserver(() => {
+    if (!el.isConnected) return ro.disconnect();
+    const h = el.offsetHeight;
+    if (h && h !== blockHeights.get(key)) {
+      blockHeights.set(key, h);
+      view.requestMeasure();
+    }
+  });
+  ro.observe(el);
+}
+
+/** Follow a link clicked inside a rendered block (table or embed). */
+function followInBlock(e: MouseEvent, host: LinkHost, from?: string): boolean {
+  const a = (e.target as HTMLElement).closest<HTMLAnchorElement>("a");
+  if (!a) return false;
+  e.preventDefault();
+  const mod = e.ctrlKey || e.metaKey;
+  if (a.dataset.target !== undefined) host.follow(a.dataset.target, true, mod, from);
+  else if (a.dataset.href) host.follow(a.dataset.href, false, mod, from);
+  else if (a.href && a.target === "_blank") window.open(a.href, "_blank", "noopener,noreferrer");
+  return true;
+}
+
+/** Offsets of the cells' content in a table row's source line. */
+function cellStarts(line: string): number[] {
+  const out: number[] = [];
+  let i = 0;
+  while (i < line.length && /\s/.test(line[i])) i++;
+  if (line[i] === "|") i++;
+  let start = i;
+  for (; i <= line.length; i++) {
+    if (i === line.length || (line[i] === "|" && line[i - 1] !== "\\")) {
+      let a = start;
+      while (a < i && line[a] === " ") a++;
+      if (i < line.length || a < i) out.push(a);
+      start = i + 1;
+    }
+  }
+  return out;
+}
+
+class TableWidget extends WidgetType {
+  constructor(
+    readonly src: string,
+    readonly path: string,
+    readonly host: LinkHost,
+  ) {
+    super();
+  }
+  eq(o: TableWidget) {
+    return o.src === this.src && o.path === this.path;
+  }
+  toDOM(view: EditorView) {
+    const wrap = document.createElement("div");
+    wrap.className = "cm-lp-table reader";
+    const key = "t:" + this.src;
+    const h = blockHeights.get(key);
+    if (h) wrap.style.minHeight = h + "px";
+    withReader((r) => {
+      r.render(wrap, this.src, this.path, 1);
+      wrap.style.minHeight = "";
+      view.requestMeasure();
+    });
+    rememberHeight(key, wrap, view);
+    wrap.onmousedown = (e) => {
+      if (e.button !== 0) return;
+      if (followInBlock(e, this.host)) return;
+      // Clicking a cell puts the cursor in that cell's source.
+      e.preventDefault();
+      const cell = (e.target as HTMLElement).closest("td, th");
+      const tr = cell?.parentElement as HTMLTableRowElement | null;
+      const start = view.posAtDOM(wrap);
+      const doc = view.state.doc;
+      let pos = start;
+      if (cell && tr) {
+        const inBody = tr.parentElement?.tagName === "TBODY";
+        const rowIdx = inBody ? tr.sectionRowIndex + 2 : 0; // skip the "|---|" line
+        const lineNo = Math.min(doc.lineAt(start).number + rowIdx, doc.lines);
+        const line = doc.line(lineNo);
+        const starts = cellStarts(line.text);
+        const col = [...tr.children].indexOf(cell);
+        pos = line.from + (starts[col] ?? 0);
+      }
+      view.dispatch({ selection: { anchor: pos } });
+      view.focus();
+    };
+    return wrap;
+  }
+  get estimatedHeight() {
+    return blockHeights.get("t:" + this.src) ?? 40 + 30 * this.src.split("\n").length;
+  }
+  ignoreEvent() {
+    return true;
+  }
+}
+
+class NoteEmbedWidget extends WidgetType {
+  constructor(
+    readonly path: string,
+    readonly sub: string,
+    readonly from: string,
+    readonly version: number,
+    readonly host: LinkHost,
+  ) {
+    super();
+  }
+  eq(o: NoteEmbedWidget) {
+    return o.path === this.path && o.sub === this.sub && o.version === this.version && o.from === this.from;
+  }
+  toDOM(view: EditorView) {
+    const wrap = document.createElement("div");
+    wrap.className = "cm-lp-embed-note reader";
+    const key = "e:" + this.path + this.sub;
+    const h = blockHeights.get(key);
+    if (h) wrap.style.minHeight = h + "px";
+    withReader((r) => {
+      const box = r.embedBox(this.path, this.sub);
+      wrap.replaceChildren(box);
+      r.fillEmbed(box.querySelector(".embed-body")!, this.path, this.sub, 1, [this.from]).then(() => {
+        wrap.style.minHeight = "";
+        view.requestMeasure();
+      });
+    });
+    rememberHeight(key, wrap, view);
+    wrap.onmousedown = (e) => {
+      if (e.button !== 0) return;
+      const inner = (e.target as HTMLElement).closest<HTMLElement>("[data-embed-from]")?.dataset.embedFrom;
+      if (followInBlock(e, this.host, inner)) return;
+      if ((e.target as HTMLElement).closest("input, button, summary")) return;
+      // Anywhere else: edit the embed line.
+      e.preventDefault();
+      view.dispatch({ selection: { anchor: view.posAtDOM(wrap) } });
+      view.focus();
+    };
+    return wrap;
+  }
+  get estimatedHeight() {
+    return blockHeights.get("e:" + this.path + this.sub) ?? 120;
+  }
+  ignoreEvent() {
+    return true;
+  }
+}
+
+const EMBED_LINE = /^\s*!\[\[([^\[\]\n]+?)\]\]\s*$/;
+
+/**
+ * Tables and lines holding just a note embed are shown rendered unless the
+ * cursor is in them. They replace whole lines, so they come from a state field.
+ */
+function blockWidgets(host: LinkHost) {
+  const make = (state: EditorState): DecorationSet => {
+    const doc = state.doc;
+    const active = activeLines(state);
+    const from = host.path();
+    const out: Range<Decoration>[] = [];
+    const anyActive = (a: number, b: number) => {
+      for (let n = a; n <= b; n++) if (active.has(n)) return true;
+      return false;
+    };
+    syntaxTree(state).iterate({
+      enter: (node) => {
+        if (node.name === "FencedCode" || node.name === "CodeBlock" || node.name === "Frontmatter") return false;
+        if (node.name !== "Table") return;
+        const a = doc.lineAt(node.from);
+        const b = doc.lineAt(node.to);
+        if (!anyActive(a.number, b.number)) {
+          const src = doc.sliceString(a.from, b.to);
+          out.push(Decoration.replace({ widget: new TableWidget(src, from, host), block: true }).range(a.from, b.to));
+        }
+        return false;
+      },
+    });
+    const fmEnd = frontmatterRange(doc)?.to ?? -1;
+
+    // Folded callouts: hide everything after the title line.
+    const folds: [number, number][] = [];
+    for (let n = 1; n <= doc.lines; n++) {
+      const l = doc.line(n);
+      if (l.from <= fmEnd || !l.text.includes("[!")) continue;
+      const m = CALLOUT_RE.exec(l.text);
+      if (!m || !m[3] || inCode(state, l.from + m[1].length)) continue;
+      let last = n;
+      while (last < doc.lines && /^\s*>/.test(doc.line(last + 1).text)) last++;
+      if (last === n) continue;
+      const end = doc.line(last).to;
+      // Keep it open while a selection is inside (e.g. after a search jump).
+      const inside = state.selection.ranges.some((r) => r.to > l.to && r.from <= end);
+      if (calloutFolded(state, l.from, m[3]) && !inside) {
+        out.push(Decoration.replace({}).range(l.to, end));
+        folds.push([l.to, end]);
+      }
+      n = last;
+    }
+    const folded = (pos: number) => folds.some(([a, b]) => pos >= a && pos <= b);
+    for (let i = out.length - folds.length - 1; i >= 0; i--) {
+      if (folded(out[i].from)) out.splice(i, 1); // tables inside a folded callout
+    }
+
+    for (let n = 1; n <= doc.lines; n++) {
+      const l = doc.line(n);
+      if (l.length < 5 || l.from <= fmEnd || active.has(n) || !l.text.includes("![[")) continue;
+      const m = EMBED_LINE.exec(l.text);
+      if (!m || folded(l.from) || inCode(state, l.from + l.text.indexOf("!"))) continue;
+      const w = parseWiki(m[1], true);
+      if (isImage(w.target)) continue;
+      const path = w.target ? vaultFiles.resolve(w.target, from) : from;
+      if (!path || !isNote(path)) continue;
+      out.push(
+        Decoration.replace({
+          widget: new NoteEmbedWidget(path, w.subpath, from, embedVersion, host),
+          block: true,
+        }).range(l.from, l.to),
+      );
+    }
+    return Decoration.set(out, true);
+  };
+  return StateField.define<DecorationSet>({
+    create: make,
+    update(value, tr) {
+      if (
+        tr.docChanged ||
+        tr.selection ||
+        tr.effects.some((e) => e.is(refreshDecorations)) ||
+        syntaxTree(tr.startState) !== syntaxTree(tr.state)
+      ) {
+        return make(tr.state);
+      }
+      return value;
+    },
+    provide: (f) => EditorView.decorations.from(f),
+  });
 }
 
 // ---------- the extension ----------
@@ -626,7 +931,7 @@ export function livePreview(host: LinkHost) {
     { decorations: (v) => v.decorations },
   );
 
-  return [touched, plugin, frontmatterField, EditorView.editorAttributes.of({ class: "cm-live" })];
+  return [touched, calloutToggles, plugin, frontmatterField, blockWidgets(host), EditorView.editorAttributes.of({ class: "cm-live" })];
 }
 
 /** Link clicking and checkbox toggling. Active in every mode. */

@@ -2,10 +2,12 @@
 <html lang="en" data-theme="midnight">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="theme-color" content="#181818" />
     <link rel="manifest" href="/manifest.webmanifest" />
-    <link rel="icon" href="/icon.svg" type="image/svg+xml" />
+    <link rel="icon" href="/favicon-32.png" sizes="32x32" type="image/png" data-size="32" />
+    <link rel="icon" href="/favicon-64.png" sizes="64x64" type="image/png" data-size="64" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <title>mdv</title>
   </head>
   <body>
@@ -17,7 +19,6 @@
           <button class="sidebar-tab" data-view="links" role="tab" title="Backlinks &amp; outgoing links (Ctrl+Shift+L)">Links</button>
           <button class="sidebar-tab" data-view="git" role="tab" title="Git (Ctrl+Shift+G)">Git</button>
           <span class="vault-name" id="vault-name"></span>
-          <button class="icon-btn" id="open-settings" title="Settings (Ctrl+,)"><svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="2.2"/><path d="M8 1.5v1.8M8 12.7v1.8M14.5 8h-1.8M3.3 8H1.5M12.6 3.4l-1.3 1.3M4.7 11.3l-1.3 1.3M12.6 12.6l-1.3-1.3M4.7 4.7 3.4 3.4"/></svg></button>
         </div>
 
         <section class="view" id="files-view">
@@ -31,6 +32,7 @@
           <div class="filter">
             <input id="tree-filter" type="search" placeholder="Filter files…" spellcheck="false" autocomplete="off" />
           </div>
+          <div id="bookmarks" hidden></div>
           <nav id="tree" tabindex="0" role="tree" aria-label="Files"></nav>
         </section>
 
@@ -53,8 +55,10 @@
       <div id="resizer"></div>
       <main id="main">
         <div id="tabbar">
+          <button class="icon-btn" id="toggle-sidebar" title="Toggle sidebar (Ctrl+\)"><svg viewBox="0 0 16 16"><path d="M2.5 4h11M2.5 8h11M2.5 12h11"/></svg></button>
           <div id="tabs"></div>
           <button class="icon-btn" id="toggle-map" title="File map (Alt+M)"><svg viewBox="0 0 16 16"><path d="M2.5 3.5h7M2.5 6.5h5M2.5 9.5h7M2.5 12.5h4M12.5 2.5v11"/></svg></button>
+          <button class="icon-btn" id="open-settings" title="Settings (Ctrl+,)"></button>
         </div>
         <div id="workspace">
           <div id="content">
@@ -62,6 +66,7 @@
             <article id="reader" class="reader"></article>
             <div id="viewer" tabindex="-1"></div>
             <div id="empty">
+              <img class="empty-logo" src="/logo-mark.png" alt="" width="128" height="128" />
               <p>No file open</p>
               <p class="hint">Pick a note from the tree, or press <kbd>Alt</kbd>+<kbd>N</kbd></p>
             </div>
@@ -73,6 +78,7 @@
         </div>
       </main>
     </div>
+    <div id="backdrop"></div>
     <footer id="status">
       <span id="status-path"></span>
       <button id="status-git" title="Git (Ctrl+Shift+G)"></button>

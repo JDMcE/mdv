@@ -1,4 +1,5 @@
 import { api, GitAuto, GitCommit, GitStatus } from "./api";
+import { diffLines, renderDiff } from "./diff";
 import { basename, isNote, stripMd, vaultFiles } from "./links";
 import { Tabs } from "./tabs";
 import { promptBox, toast } from "./ui";
@@ -256,13 +257,17 @@ export class GitPanel {
       text.append(el("span", "", c.subject), el("span", "git-dim", ` · ${ago(c.time)}`));
       row.append(text);
       row.title = `${c.author}, ${new Date(c.time * 1000).toLocaleString()}`;
-      row.onclick = () => this.showVersion(path, c);
+      row.onclick = () => this.showVersion(path, commits, commits.indexOf(c));
       list.append(row);
     }
   }
 
-  /** Show an old version of a note, with the option to restore it. */
-  private async showVersion(path: string, c: GitCommit) {
+  /**
+   * Show an old version of a note: what that commit changed, how it differs
+   * from the note now, or the version itself, with the option to restore it.
+   */
+  private async showVersion(path: string, commits: GitCommit[], i: number) {
+    const c = commits[i];
     let content: string;
     try {
       content = await api.git.show(c.hash, path);
@@ -270,6 +275,13 @@ export class GitPanel {
       toast(e);
       return;
     }
+    // The version before this one in the note's own history (follows renames).
+    const older = commits[i + 1];
+    let parent: Promise<string> | null = null;
+    const parentText = () =>
+      (parent ??= older ? api.git.show(older.hash, path).catch(() => "") : Promise.resolve(""));
+    const currentText = async () => this.tabs.textOf(path) ?? (await api.read(path)).content;
+
     const overlay = el("div", "overlay");
     const box = el("div", "version");
     const bar = el("div", "version-bar");
@@ -285,8 +297,56 @@ export class GitPanel {
     };
     const close = el("button", "btn", "Close");
     close.onclick = () => overlay.remove();
-    bar.append(title, restore, close);
-    const body = el("div", "version-body reader");
+
+    type ViewKind = "changes" | "current" | "version";
+    const views: [ViewKind, string, string][] = [
+      ["changes", "Changes", "What this commit changed in the note"],
+      ["current", "Compare with now", "Differences between this version and the note as it is now"],
+      ["version", "Version", "The note as it was in this commit"],
+    ];
+    const seg = el("div", "seg");
+    const body = el("div", "version-body");
+    let shown: ViewKind = "changes";
+    try {
+      const v = localStorage.getItem("mdv.versionView") as ViewKind | null;
+      if (v && views.some(([k]) => k === v)) shown = v;
+    } catch {}
+    const show = async (kind: ViewKind) => {
+      shown = kind;
+      try {
+        localStorage.setItem("mdv.versionView", kind);
+      } catch {}
+      seg.querySelectorAll("button").forEach((b) => b.classList.toggle("on", b.dataset.kind === kind));
+      body.className = "version-body" + (kind === "version" ? " reader" : "");
+      body.replaceChildren(el("p", "panel-empty", "Loading…"));
+      let node: HTMLElement;
+      try {
+        if (kind === "version") {
+          node = el("div");
+          if (isNote(path)) (await import("./reader")).render(node, content, path);
+          else node.append(el("pre", "", content));
+          if (shown !== kind) return;
+          body.replaceChildren(...node.childNodes);
+          return;
+        }
+        const [from, to] = kind === "changes" ? [await parentText(), content] : [content, await currentText()];
+        node = renderDiff(diffLines(from, to));
+        if (kind === "changes" && !older) node.prepend(el("p", "git-dim diff-note", "First version of this note in history."));
+        if (kind === "current") node.prepend(el("p", "git-dim diff-note", "− this version   + now"));
+      } catch (e) {
+        node = el("p", "panel-empty", String((e as Error).message));
+      }
+      if (shown === kind) body.replaceChildren(node);
+    };
+    for (const [kind, label, tip] of views) {
+      const b = el("button", "", label);
+      b.dataset.kind = kind;
+      b.title = tip;
+      b.onclick = () => show(kind);
+      seg.append(b);
+    }
+
+    bar.append(title, seg, restore, close);
     box.append(bar, body);
     overlay.append(box);
     overlay.onmousedown = (e) => {
@@ -298,11 +358,6 @@ export class GitPanel {
     };
     document.body.append(overlay);
     overlay.focus();
-    if (isNote(path)) {
-      const r = await import("./reader");
-      r.render(body, content, path);
-    } else {
-      body.append(el("pre", "", content));
-    }
+    show(shown);
   }
 }

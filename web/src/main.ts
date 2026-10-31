@@ -1,6 +1,9 @@
 import "./themes.css";
 import "./style.css";
 import { api, VaultEvent } from "./api";
+import { bookmarks, BookmarksPanel } from "./bookmarks";
+import { CATS } from "./cats";
+import { invalidate, setLiveText } from "./embeds";
 import { FileMap } from "./filemap";
 import { GitPanel } from "./gitpanel";
 import { LinksPanel } from "./linkspanel";
@@ -17,30 +20,61 @@ const switcher = new Switcher(tree, tabs);
 const links = new LinksPanel(tabs);
 const git = new GitPanel(tabs);
 const fileMap = new FileMap(() => tabs.mapView());
+const bookmarksPanel = new BookmarksPanel(tree, tabs);
+setLiveText((p) => tabs.textOf(p));
 tabs.onViewChange = (content) => fileMap.update(content);
 addEventListener("resize", () => fileMap.update());
 let authEnabled = false;
 
 tabs.onActiveChange = (p) => {
   tree.onActive(p);
+  bookmarksPanel.markActive();
+  if (p && p !== lastActive && isMobile()) setDrawer(false); // picked a note: get out of the way
+  lastActive = p;
   switcher.visited(p);
   links.refresh();
   if (git.visible) git.render();
 };
 tabs.onSaved = (p, mtime) => {
+  invalidate(p);
   tree.touch(p, mtime);
   links.refresh(true);
   git.refresh(2000);
 };
 tabs.onCreated = () => tree.refresh();
-tree.onFilesChanged = () => tabs.linksChanged();
+tree.onFilesChanged = () => {
+  tabs.linksChanged();
+  bookmarksPanel.render(); // folders/missing state
+};
 git.onPulled = () => tree.refresh();
 
 settings.subscribe((s) => {
   tabs.defaultMode = s.defaultMode;
   tree.setShowAttachments(s.showAttachments);
+  tree.redraw(); // bookmark stars
   tabs.linksChanged(); // re-applies editor attributes such as spellcheck
   fileMap.update(true);
+});
+
+// ---------- sidebar (a drawer on narrow screens) ----------
+
+let lastActive: string | null = null;
+const mobileQuery = matchMedia("(max-width: 700px)");
+const isMobile = () => mobileQuery.matches;
+
+function setDrawer(open: boolean) {
+  document.body.classList.toggle("drawer-open", open);
+}
+
+function toggleSidebar() {
+  if (isMobile()) setDrawer(!document.body.classList.contains("drawer-open"));
+  else document.body.classList.toggle("no-sidebar");
+}
+document.getElementById("toggle-sidebar")!.onclick = toggleSidebar;
+document.getElementById("backdrop")!.onclick = () => setDrawer(false);
+mobileQuery.addEventListener("change", () => {
+  setDrawer(false);
+  tree.redraw(); // row height differs
 });
 
 // ---------- sidebar views ----------
@@ -50,6 +84,7 @@ const VIEWS: View[] = ["files", "search", "links", "git"];
 
 function showView(v: View) {
   document.body.classList.remove("no-sidebar");
+  if (isMobile()) setDrawer(true);
   document.querySelectorAll<HTMLElement>(".sidebar-tab").forEach((t) => {
     t.classList.toggle("active", t.dataset.view === v);
     t.ariaSelected = String(t.dataset.view === v);
@@ -78,7 +113,21 @@ try {
   if (v && VIEWS.includes(v)) showView(v);
 } catch {}
 
-document.getElementById("open-settings")!.onclick = () => openSettings({ auth: authEnabled });
+const settingsBtn = document.getElementById("open-settings")!;
+settingsBtn.onclick = () => openSettings({ auth: authEnabled });
+// A different cat each time the page loads.
+{
+  const cat = CATS[Math.floor(Math.random() * CATS.length)];
+  const NS = "http://www.w3.org/2000/svg";
+  const svg = document.createElementNS(NS, "svg");
+  svg.setAttribute("viewBox", cat.viewBox);
+  svg.classList.add("cat-icon");
+  const path = document.createElementNS(NS, "path");
+  path.setAttribute("fill-rule", "evenodd");
+  path.setAttribute("d", cat.d);
+  svg.append(path);
+  settingsBtn.replaceChildren(svg);
+}
 document.getElementById("status-mode")!.onclick = () => tabs.cycleMode();
 
 // ---------- global shortcuts ----------
@@ -112,7 +161,10 @@ document.addEventListener(
     else if (e.altKey && !mod && e.key === "ArrowRight") tabs.history(1);
     else if (mod && e.altKey && e.key === "ArrowRight") tabs.next(1);
     else if (mod && e.altKey && e.key === "ArrowLeft") tabs.next(-1);
-    else if (mod && e.key === "\\") document.body.classList.toggle("no-sidebar");
+    else if (mod && e.key === "\\") toggleSidebar();
+    else if (e.altKey && !mod && k === "b") {
+      if (tabs.activePath) bookmarks.toggle(tabs.activePath);
+    }
     else if (e.altKey && !mod && k === "m") fileMap.toggle();
     else if (mod && k === "s") {
       // Handled by the editor; just block the browser's save dialog.
@@ -180,6 +232,7 @@ function connect() {
     const ev: VaultEvent = JSON.parse(m.data);
     if (ev.type === "tree") refreshTree();
     else if (ev.type === "change" && ev.path) {
+      if (invalidate(ev.path)) tabs.linksChanged(); // an embed shows it
       tabs.externalChange(ev.path, ev.mtime);
       tree.touch(ev.path, ev.mtime);
       search.refresh();

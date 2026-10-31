@@ -5,7 +5,8 @@ import DOMPurify from "dompurify";
 import { highlightCode, classHighlighter } from "@lezer/highlight";
 import { findLanguage } from "./codelang";
 import { rawUrl } from "./api";
-import { dirname, isImage, normalize, parseSize, parseWiki, stripMd, vaultFiles } from "./links";
+import { MAX_EMBED_DEPTH, noteText, section } from "./embeds";
+import { basename, dirname, isImage, isNote, normalize, parseSize, parseWiki, stripMd, vaultFiles } from "./links";
 import { propertiesElement } from "./livepreview";
 import { settings } from "./settings";
 import { copyButton } from "./ui";
@@ -38,6 +39,9 @@ function wikilinkRule(state: StateInline, silent: boolean): boolean {
       tok.content = resolved
         ? `<img src="${esc(rawUrl(resolved))}" alt="${esc(alt)}"${style} data-path="${esc(resolved)}">`
         : `<span class="broken-embed">⚠ ${esc(w.target)}</span>`;
+    } else if (embed && resolved && isNote(resolved)) {
+      // Note transclusion; filled in after rendering (see transclude()).
+      tok.content = `<span class="transclude" data-path="${esc(resolved)}" data-sub="${esc(w.subpath)}"></span>`;
     } else {
       const label = w.alias || (w.target ? stripMd(w.target) : "") + (w.subpath ? (w.target ? " › " : "") + w.subpath.slice(1) : "");
       const cls = "wikilink" + (resolved ? "" : " unresolved") + (embed ? " embed" : "");
@@ -226,8 +230,69 @@ async function highlight(root: HTMLElement) {
   }
 }
 
-/** Render `src` (the note at `path`) into `root`. */
-export function render(root: HTMLElement, src: string, path: string) {
+/** Title of an embed: note name, plus the heading or block it shows. */
+export function embedTitle(path: string, sub: string) {
+  const name = stripMd(basename(path));
+  return sub ? `${name} › ${sub.replace(/^#\^?/, "")}` : name;
+}
+
+/** Fill in note embeds rendered by wikilinkRule. */
+function transclude(root: HTMLElement, depth: number, chain: string[]) {
+  for (const span of root.querySelectorAll<HTMLElement>("span.transclude")) {
+    const path = span.dataset.path ?? "";
+    const sub = span.dataset.sub ?? "";
+    const box = embedBox(path, sub);
+    // An embed alone in its paragraph replaces the paragraph.
+    const p = span.parentElement;
+    const alone =
+      p?.tagName === "P" &&
+      [...p.childNodes].every((n) => n === span || n.nodeName === "BR" || (n.nodeType === Node.TEXT_NODE && !n.textContent!.trim()));
+    (alone ? p! : span).replaceWith(box);
+    fillEmbed(box.querySelector(".embed-body")!, path, sub, depth + 1, chain);
+  }
+}
+
+/** The frame of an embedded note: a title linking to it, and a body. */
+export function embedBox(path: string, sub: string): HTMLElement {
+  const box = document.createElement("div");
+  box.className = "embed-note";
+  box.dataset.embedFrom = path;
+  const title = document.createElement("a");
+  title.className = "embed-title";
+  title.href = "#";
+  title.dataset.target = path + sub;
+  title.textContent = embedTitle(path, sub);
+  title.title = "Open " + path;
+  const body = document.createElement("div");
+  body.className = "embed-body";
+  box.append(title, body);
+  return box;
+}
+
+/** Render (part of) the note at `path` into an embed body. */
+export async function fillEmbed(body: HTMLElement, path: string, sub: string, depth: number, chain: string[]) {
+  const note = (msg: string) => {
+    body.replaceChildren();
+    const p = document.createElement("p");
+    p.className = "broken-embed";
+    p.textContent = msg;
+    body.append(p);
+  };
+  if (chain.includes(path) && !sub) return note("⚠ This embed would include itself.");
+  if (depth > MAX_EMBED_DEPTH) return note("⚠ Embeds nested too deeply.");
+  let text: string;
+  try {
+    text = await noteText(path);
+  } catch {
+    return note(`⚠ Couldn't load ${path}`);
+  }
+  const part = section(text, sub);
+  if (part === null) return note(`⚠ "${sub.replace(/^#\^?/, "")}" not found in ${stripMd(basename(path))}`);
+  render(body, part, path, depth, [...chain, path]);
+}
+
+/** Render `src` (the note at `path`) into `root`. `depth` > 0 inside embeds. */
+export function render(root: HTMLElement, src: string, path: string, depth = 0, chain: string[] = []) {
   currentPath = path;
   const { meta, body, lines } = frontmatter(src);
   const env = {};
@@ -235,7 +300,7 @@ export function render(root: HTMLElement, src: string, path: string) {
   let html = md.render(body, env);
   if (lines) html = html.replace(/data-line="(\d+)"/g, (_, n) => `data-line="${Number(n) + lines}"`);
   const clean = DOMPurify.sanitize(html, {
-    ADD_ATTR: ["target", "data-target", "data-href", "data-path", "data-line", "checked"],
+    ADD_ATTR: ["target", "data-target", "data-href", "data-path", "data-line", "data-sub", "checked"],
     ADD_TAGS: ["mark"],
   });
   root.innerHTML = clean;
@@ -255,4 +320,7 @@ export function render(root: HTMLElement, src: string, path: string) {
     pre.append(copyButton(() => ((code ?? pre).textContent ?? "").replace(/\n$/, ""), "reader-copy"));
   }
   highlight(root);
+  // Checkboxes in an embed carry the embedded note's line numbers.
+  if (depth > 0) root.querySelectorAll<HTMLInputElement>("input.task").forEach((b) => (b.disabled = true));
+  transclude(root, depth, chain.length ? chain : [path]);
 }

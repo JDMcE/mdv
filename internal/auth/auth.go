@@ -103,7 +103,9 @@ func (a *Auth) Middleware(next http.Handler) http.Handler {
 			http.SetCookie(w, &http.Cookie{Name: cookieName, Value: "", Path: "/", MaxAge: -1, HttpOnly: true})
 			http.Redirect(w, r, "/login", http.StatusSeeOther)
 			return
-		case "/manifest.webmanifest", "/icon.svg", "/icon-192.png", "/icon-512.png":
+		case "/manifest.webmanifest", "/icon-192.png", "/icon-512.png", "/icon-maskable-512.png",
+			"/apple-touch-icon.png", "/favicon-32.png", "/favicon-64.png", "/logo-mark.png",
+			"/favicon-light-32.png", "/favicon-light-64.png", "/logo-mark-light.png":
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -122,17 +124,21 @@ func (a *Auth) Middleware(next http.Handler) http.Handler {
 var page = template.Must(template.New("login").Parse(`<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>mdv · sign in</title>
+<link rel="icon" href="/favicon-32.png" sizes="32x32" type="image/png">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <style>
 :root{color-scheme:dark}
 body{margin:0;min-height:100vh;display:grid;place-items:center;background:#1e1e1e;color:#dcddde;font:15px system-ui,sans-serif}
 form{width:min(320px,calc(100vw - 32px));display:flex;flex-direction:column;gap:12px;padding:28px;background:#181818;border:1px solid #2e2e2e;border-radius:10px}
-h1{margin:0 0 4px;font-size:20px}
+h1{margin:0 0 4px;font-size:20px;text-align:center}
+.logo{display:block;width:96px;height:96px;margin:0 auto}
 input{font:inherit;color:inherit;background:#1e1e1e;border:1px solid #2e2e2e;border-radius:6px;padding:9px 11px;outline:none}
 input:focus{border-color:#8b6cef}
 button{font:inherit;color:#fff;background:#8b6cef;border:0;border-radius:6px;padding:9px;cursor:pointer}
 .err{color:#e5534b;font-size:13px;margin:0}
 </style></head><body>
 <form method="post" action="/login">
+<img class="logo" src="/logo-mark.png" alt="">
 <h1>mdv</h1>
 {{if .Error}}<p class="err">{{.Error}}</p>{{end}}
 <input type="password" name="password" placeholder="Password" autofocus autocomplete="current-password">

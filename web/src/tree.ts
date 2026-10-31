@@ -1,4 +1,5 @@
 import { api, TreeNode } from "./api";
+import { bookmarks } from "./bookmarks";
 import { isImage, isNote, isPdf, vaultFiles } from "./links";
 import { embedFor, linkFor } from "./livepreview";
 import { Tabs } from "./tabs";
@@ -7,6 +8,8 @@ import { confirmBox, contextMenu, copyText, MenuItem, promptBox, toast } from ".
 const OPEN_KEY = "mdv.openFolders";
 const SORT_KEY = "mdv.sort";
 const SCROLL_KEY = "mdv.treeScroll";
+/** Rows rendered above and below the visible ones. */
+const OVERSCAN = 12;
 
 const parentOf = (p: string) => (p.includes("/") ? p.slice(0, p.lastIndexOf("/")) : "");
 const join = (dir: string, name: string) => (dir ? dir + "/" + name : name);
@@ -46,7 +49,13 @@ export class Tree {
   private sort: SortMode = load<SortMode>(SORT_KEY, "name");
   private filter = "";
   private rows: Row[] = [];
+  private rowIndex = new Map<string, number>();
+  /** Only the rows near the viewport exist in the DOM (the tree is virtualised). */
   private rowEls = new Map<string, HTMLElement>();
+  private sizer = document.createElement("div");
+  private tokens: string[] = [];
+  private painted: [number, number] = [-1, -1];
+  private rowH = 26;
   private selected: string | null = null; // keyboard cursor
   private typeahead = "";
   private typeaheadTimer = 0;
@@ -68,11 +77,35 @@ export class Tree {
     document.getElementById("collapse-all")!.onclick = () => this.collapseAll();
     document.getElementById("reveal")!.onclick = () => this.reveal(this.tabs.activePath, true);
     document.getElementById("sort")!.onclick = (e) => this.sortMenu(e);
+    this.sizer.className = "tree-sizer";
     let scrollTimer = 0;
+    let frame = 0;
     this.el.addEventListener("scroll", () => {
+      if (!frame)
+        frame = requestAnimationFrame(() => {
+          frame = 0;
+          this.paint();
+        });
       clearTimeout(scrollTimer);
       scrollTimer = window.setTimeout(() => save(SCROLL_KEY, this.el.scrollTop), 200);
     });
+    // Becoming visible (sidebar shown, window resized) changes which rows fit.
+    new ResizeObserver(() => this.paint()).observe(this.el);
+  }
+
+  /** Re-render rows (e.g. after bookmarks change). */
+  redraw() {
+    this.render();
+  }
+
+  /** Whether a path is a folder in the vault. */
+  isDir(path: string) {
+    return !!this.byPath.get(path)?.dir;
+  }
+
+  /** Open a folder. */
+  expand(path: string) {
+    if (this.isDir(path)) this.toggle(path, true);
   }
 
   // ---------- data ----------
@@ -94,6 +127,7 @@ export class Tree {
     if (!this.restoredScroll) {
       this.restoredScroll = true;
       this.el.scrollTop = load<number>(SCROLL_KEY, 0);
+      this.paint();
     }
   }
 
@@ -195,23 +229,59 @@ export class Tree {
   // ---------- rendering ----------
 
   private render() {
-    const scroll = this.el.scrollTop;
     this.rows = this.computeRows();
-    this.rowEls.clear();
-    const tokens = this.filter.toLowerCase().split(/\s+/).filter(Boolean);
-    const frag = document.createDocumentFragment();
-    for (const r of this.rows) frag.append(this.renderRow(r, tokens));
+    this.rowIndex = new Map(this.rows.map((r, i) => [r.node.path, i]));
+    this.tokens = this.filter.toLowerCase().split(/\s+/).filter(Boolean);
+    this.el.classList.toggle("filtering", !!this.tokens.length);
     if (!this.rows.length) {
       const empty = document.createElement("div");
       empty.className = "tree-empty";
       empty.textContent = this.filter ? "No matching notes" : "No notes yet";
-      frag.append(empty);
+      this.rowEls.clear();
+      this.el.replaceChildren(empty);
+      return;
     }
-    this.el.replaceChildren(frag);
-    this.el.scrollTop = scroll;
-    this.el.classList.toggle("filtering", !!tokens.length);
+    if (this.sizer.parentNode !== this.el) this.el.replaceChildren(this.sizer);
+    this.rowH = parseFloat(getComputedStyle(this.el).getPropertyValue("--row-h")) || 26;
+    this.sizer.style.height = this.rows.length * this.rowH + "px";
+    this.paint(true);
+  }
+
+  /** (Re)build the rows that are in or near the viewport. */
+  private paint(force = false) {
+    if (!this.rows.length || this.sizer.parentNode !== this.el) return;
+    if (this.renaming && !force) return; // keep the rename input alive
+    const h = this.rowH;
+    const top = this.el.scrollTop - this.sizer.offsetTop;
+    const first = Math.max(0, Math.floor(top / h) - OVERSCAN);
+    const last = Math.min(this.rows.length, Math.ceil((top + this.el.clientHeight) / h) + OVERSCAN);
+    if (!force && first === this.painted[0] && last === this.painted[1]) return;
+    this.painted = [first, last];
+    this.rowEls.clear();
+    const frag = document.createDocumentFragment();
+    for (let i = first; i < last; i++) {
+      const row = this.renderRow(this.rows[i], this.tokens);
+      row.style.top = i * h + "px";
+      frag.append(row);
+    }
+    this.sizer.replaceChildren(frag);
     this.markActive();
     this.markSelected(false);
+  }
+
+  /** Scroll the minimum needed to show row i, and make sure it's rendered. */
+  private scrollToRow(i: number) {
+    if (i < 0 || i >= this.rows.length) return;
+    const top = this.sizer.offsetTop + i * this.rowH;
+    const view = this.el.clientHeight;
+    if (top < this.el.scrollTop) this.el.scrollTop = top;
+    else if (top + this.rowH > this.el.scrollTop + view) this.el.scrollTop = top + this.rowH - view;
+    this.paint();
+  }
+
+  private scrollToPath(path: string | null) {
+    const i = path ? this.rowIndex.get(path) : undefined;
+    if (i !== undefined) this.scrollToRow(i);
   }
 
   private renderRow({ node, depth }: Row, tokens: string[]): HTMLElement {
@@ -240,6 +310,13 @@ export class Tree {
     const label = displayName(node);
     name.append(tokens.length ? markTokens(label, tokens) : label);
     row.append(name);
+    if (bookmarks.has(node.path)) {
+      const star = document.createElement("span");
+      star.className = "bm-star";
+      star.textContent = "★";
+      star.title = "Bookmarked";
+      row.append(star);
+    }
     if (!node.dir && !isNote(node.name)) {
       const ext = document.createElement("span");
       ext.className = "ext" + (isImage(node.name) ? " img" : isPdf(node.name) ? " pdf" : "");
@@ -257,12 +334,9 @@ export class Tree {
   }
 
   private markSelected(scroll = true) {
+    if (scroll) this.scrollToPath(this.selected);
     this.el.querySelectorAll(".row.selected").forEach((e) => e.classList.remove("selected"));
-    if (!this.selected) return;
-    const row = this.rowEls.get(this.selected);
-    if (!row) return;
-    row.classList.add("selected");
-    if (scroll) row.scrollIntoView({ block: "nearest" });
+    if (this.selected) this.rowEls.get(this.selected)?.classList.add("selected");
   }
 
   /** Called when the active tab changes. */
@@ -289,8 +363,8 @@ export class Tree {
       save(OPEN_KEY, [...this.openFolders]);
       this.render();
     }
+    this.scrollToPath(path);
     this.markActive();
-    this.rowEls.get(path)?.scrollIntoView({ block: "nearest" });
     if (select) {
       this.selected = path;
       this.markSelected();
@@ -435,7 +509,7 @@ export class Tree {
         this.markSelected();
       }
     };
-    const page = Math.max(1, Math.floor(this.el.clientHeight / 26) - 1);
+    const page = Math.max(1, Math.floor(this.el.clientHeight / this.rowH) - 1);
 
     switch (e.key) {
       case "ArrowDown":
@@ -531,7 +605,7 @@ export class Tree {
     f.addEventListener("keydown", (e) => {
       if (e.key === "ArrowDown") {
         e.preventDefault();
-        if (!this.selected || !this.rowEls.has(this.selected)) this.selected = this.rows[0]?.node.path ?? null;
+        if (!this.selected || !this.rowIndex.has(this.selected)) this.selected = this.rows[0]?.node.path ?? null;
         this.markSelected();
         this.el.focus();
       } else if (e.key === "Enter") {
@@ -560,8 +634,8 @@ export class Tree {
   }
 
   focusTree() {
-    if (!this.selected || !this.rowEls.has(this.selected)) {
-      this.selected = this.tabs.activePath && this.rowEls.has(this.tabs.activePath)
+    if (!this.selected || !this.rowIndex.has(this.selected)) {
+      this.selected = this.tabs.activePath && this.rowIndex.has(this.tabs.activePath)
         ? this.tabs.activePath
         : this.rows[0]?.node.path ?? null;
     }
@@ -577,6 +651,7 @@ export class Tree {
       { label: "Rename…", hint: "F2", run: () => this.rename(path) },
       { label: "Copy path", run: () => copy(path) },
       { label: "Copy wikilink", run: () => copy(isImage(path) ? embedFor(path) : linkFor(path)) },
+      { label: bookmarks.has(path) ? "Remove bookmark" : "Bookmark", hint: "Alt+B", run: () => bookmarks.toggle(path) },
       { label: "Delete", hint: "Del", danger: true, run: () => this.remove(path) },
     ]);
   }
@@ -590,6 +665,7 @@ export class Tree {
       items.push(
         { label: "Rename…", hint: "F2", run: () => this.rename(path) },
         { label: "Copy path", run: () => copy(path) },
+        { label: bookmarks.has(path) ? "Remove bookmark" : "Bookmark", run: () => bookmarks.toggle(path) },
         { label: "Delete", hint: "Del", danger: true, run: () => this.remove(path) },
       );
     }
@@ -646,6 +722,7 @@ export class Tree {
   /** Inline rename: the row's label becomes an input. */
   private rename(path: string) {
     const node = this.byPath.get(path);
+    this.scrollToPath(path);
     const row = this.rowEls.get(path);
     if (!node || !row) return;
     const nameEl = row.querySelector(".name")!;
@@ -701,6 +778,7 @@ export class Tree {
     if (parentOf(to)) this.openFolders.add(parentOf(to));
     save(OPEN_KEY, [...this.openFolders]);
     this.selected = to;
+    bookmarks.moved(from, to);
     this.tabs.renamed(from, to);
     await this.refresh();
     this.markSelected();
@@ -723,6 +801,7 @@ export class Tree {
       return;
     }
     this.selected = next?.node.path ?? null;
+    bookmarks.removed(path);
     this.tabs.removed(path);
     await this.refresh();
     this.el.focus();

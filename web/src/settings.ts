@@ -22,6 +22,8 @@ export interface Settings {
   spellcheck: boolean;
   frontmatter: "hidden" | "properties" | "raw";
   lineNumbers: boolean;
+  /** Bookmarked notes and folders, in display order. */
+  bookmarks: string[];
 }
 
 const DEFAULTS: Settings = {
@@ -34,6 +36,7 @@ const DEFAULTS: Settings = {
   showAttachments: true,
   spellcheck: true,
   lineNumbers: true,
+  bookmarks: [],
 };
 
 const CACHE_KEY = "mdv.settings";
@@ -116,6 +119,12 @@ export function apply() {
   root.style.setProperty("--line-width", current.lineWidth ? current.lineWidth + "rem" : "100%");
   root.style.setProperty("--font-text", FONTS[current.font]);
   document.body.classList.toggle("no-line-numbers", !current.lineNumbers);
+  // Light theme: the original cat on cream; dark themes: outlined cat on a dark tile.
+  const suffix = current.theme === "latte" ? "-light" : "";
+  document.querySelectorAll<HTMLLinkElement>('link[rel="icon"][data-size]').forEach((l) => {
+    l.href = `/favicon${suffix}-${l.dataset.size}.png`;
+  });
+  document.querySelectorAll<HTMLImageElement>("img.empty-logo").forEach((img) => (img.src = `/logo-mark${suffix}.png`));
   document.querySelector('meta[name="theme-color"]')?.setAttribute(
     "content",
     getComputedStyle(root).getPropertyValue("--bg-alt").trim() || "#181818",

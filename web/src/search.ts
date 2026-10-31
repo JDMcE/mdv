@@ -3,11 +3,14 @@ import { highlightRanges } from "./fuzzy";
 import { Tabs } from "./tabs";
 
 const STATE_KEY = "mdv.search";
+const HISTORY_KEY = "mdv.searchHistory";
+const HISTORY_MAX = 20;
 const DEBOUNCE_MS = 180;
 
 interface Hit {
   el: HTMLElement;
   path: string;
+  query?: string; // a recent search (shown while the box is empty)
   line?: number; // undefined for the file header row
   col?: number;
   len?: number;
@@ -25,12 +28,17 @@ export class Search {
   private hits: Hit[] = [];
   private sel = -1;
   private lastQuery = "";
+  private history: string[] = [];
 
   constructor(private tabs: Tabs) {
     try {
       const s = JSON.parse(localStorage.getItem(STATE_KEY) || "{}");
       this.input.value = s.q ?? "";
       this.opts = s.opts ?? {};
+    } catch {}
+    try {
+      const h = JSON.parse(localStorage.getItem(HISTORY_KEY) || "[]");
+      if (Array.isArray(h)) this.history = h.filter((x) => typeof x === "string");
     } catch {}
     document.querySelectorAll<HTMLButtonElement>(".search-opts .opt").forEach((b) => {
       const k = b.dataset.opt as keyof SearchOptions;
@@ -45,6 +53,7 @@ export class Search {
     this.input.addEventListener("input", () => this.schedule());
     this.input.addEventListener("keydown", (e) => this.onInputKey(e));
     this.results.addEventListener("keydown", (e) => this.onResultsKey(e));
+    if (!this.input.value.trim()) this.renderHistory();
   }
 
   /** Show the panel; seed with the editor selection if there is one. */
@@ -56,6 +65,80 @@ export class Search {
     this.input.focus();
     this.input.select();
     if (this.input.value && !this.hits.length) this.run(true);
+    else if (!this.input.value) this.renderHistory();
+  }
+
+  // ---------- history ----------
+
+  /** Remember a query that was actually used (Enter, or a result opened). */
+  private remember(q = this.input.value.trim()) {
+    if (!q) return;
+    this.history = [q, ...this.history.filter((h) => h !== q)].slice(0, HISTORY_MAX);
+    this.saveHistory();
+  }
+
+  private saveHistory() {
+    try {
+      localStorage.setItem(HISTORY_KEY, JSON.stringify(this.history));
+    } catch {}
+  }
+
+  /** With an empty box, the results area lists recent searches. */
+  private renderHistory() {
+    this.hits = [];
+    this.sel = -1;
+    this.summary.classList.remove("error");
+    if (!this.history.length) {
+      this.summary.textContent = "";
+      this.results.replaceChildren();
+      return;
+    }
+    this.summary.textContent = "";
+    const head = document.createElement("div");
+    head.className = "sh-head";
+    head.append("Recent searches");
+    const clear = document.createElement("button");
+    clear.className = "link-btn";
+    clear.textContent = "clear";
+    clear.onclick = () => {
+      this.history = [];
+      this.saveHistory();
+      this.renderHistory();
+      this.input.focus();
+    };
+    head.append(clear);
+    const frag = document.createDocumentFragment();
+    frag.append(head);
+    for (const q of this.history) {
+      const row = document.createElement("div");
+      row.className = "sr-head sh-item";
+      row.title = "Search again";
+      const text = document.createElement("span");
+      text.className = "sh-text";
+      text.textContent = q;
+      const x = document.createElement("button");
+      x.className = "sh-remove";
+      x.textContent = "×";
+      x.title = "Remove from history";
+      x.onclick = (e) => {
+        e.stopPropagation();
+        this.history = this.history.filter((h) => h !== q);
+        this.saveHistory();
+        this.renderHistory();
+      };
+      row.append(text, x);
+      const hit: Hit = { el: row, path: "", query: q };
+      row.onclick = () => this.useQuery(q);
+      this.hits.push(hit);
+      frag.append(row);
+    }
+    this.results.replaceChildren(frag);
+  }
+
+  private useQuery(q: string) {
+    this.input.value = q;
+    this.input.focus();
+    this.run(true);
   }
 
   /** Re-run after the vault changed, if there's an active query. */
@@ -78,9 +161,7 @@ export class Search {
     this.lastQuery = key;
     this.ctrl?.abort();
     if (!q.trim()) {
-      this.results.replaceChildren();
-      this.summary.textContent = "";
-      this.hits = [];
+      this.renderHistory();
       return;
     }
     const ctrl = (this.ctrl = new AbortController());
@@ -181,6 +262,11 @@ export class Search {
   }
 
   private async openHit(h: Hit, background: boolean, keepFocus = false) {
+    if (h.query !== undefined) {
+      this.useQuery(h.query);
+      return;
+    }
+    this.remember();
     this.select(this.hits.indexOf(h), false);
     await this.tabs.open(h.path, {
       background,
@@ -223,6 +309,7 @@ export class Search {
     } else if (e.key === "Enter") {
       e.preventDefault();
       clearTimeout(this.timer);
+      this.remember();
       // Enter jumps to the first hit (running the search first if still pending).
       this.run().then(() => {
         const first = this.hits.find((h) => h.line) ?? this.hits[0];
@@ -249,7 +336,7 @@ export class Search {
         break;
       case "ArrowLeft":
       case "ArrowRight": {
-        if (!h) return;
+        if (!h || h.query !== undefined) return;
         const group = h.el.closest<HTMLElement>(".sr-file")!;
         const collapsed = this.collapsed.has(h.path);
         if ((e.key === "ArrowLeft") !== collapsed) this.toggle(h.path, group);
@@ -261,6 +348,14 @@ export class Search {
         break;
       case " ":
         if (h) this.openHit(h, false, true); // preview, keep focus in results
+        break;
+      case "Delete":
+        if (h?.query === undefined) return;
+        this.history = this.history.filter((q) => q !== h.query);
+        this.saveHistory();
+        this.renderHistory();
+        this.results.focus();
+        this.step(1);
         break;
       case "Escape":
         this.input.focus();

@@ -172,9 +172,18 @@ pulled ahead of editor polish.
 8. ✅ **Line numbers** (toggle) and **vault settings** stored in `.mdv/settings.json`
    (`GET/PUT /api/settings`), cached per browser, migrated from old browser settings.
 
-Later ideas: bookmarks/pinned notes, note transclusion (`![[note]]`), tables in
-live preview, graph view, diff view in history, virtualised tree
-for very large vaults, search history, mobile layout, specify default attachment location in settings.
+9. ✅ **Round 3**
+   - Bookmarks for notes and folders (stored in vault settings; Alt+B, tree
+     context menu, drag from tree; reorderable; follow renames/deletes).
+   - Note transclusion `![[note]]`, `![[note#Heading]]`, `![[note#^block]]`
+     in live preview and reading view, nested up to 4 levels.
+   - Tables rendered in live preview; clicking a cell edits that cell.
+   - History diffs: what a commit changed, and compare a version with now.
+   - Virtualised file tree (only rows near the viewport are in the DOM).
+   - Recent searches in the search panel.
+   - Mobile layout: sidebar as a drawer, larger touch targets.
+
+Later ideas: graph view (dropped: not used).
 
 ## Repo layout
 
