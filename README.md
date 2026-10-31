@@ -43,6 +43,9 @@ mounts, so edits made outside the app may only appear after a reload.
 
 All settings are environment variables (see `docker-compose.yml`).
 
+Keep secrets such as `MDV_PASSWORD` in a `.env` file next to `docker-compose.yml`
+(copy `.env.example`). It's loaded automatically and ignored by git.
+
 | Variable | Default | Meaning |
 |---|---|---|
 | `MDV_VAULT` | `/vault` | Vault folder |

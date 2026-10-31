@@ -8,9 +8,13 @@ services:
       # A named volume keeps notes inside Docker's VM (out of reach of host AV).
       # Swap for a bind mount (e.g. ./vault:/vault) to edit an existing folder.
       - vault:/vault
+    # Secrets such as MDV_PASSWORD live in .env, which git ignores.
+    env_file:
+      - path: .env
+        required: false
     environment:
       # Require a password (strongly recommended if reachable from other machines).
-      # MDV_PASSWORD: change-me
+      # MDV_PASSWORD: set it in .env (copy .env.example), not here.
 
       # Git identity for commits made from the app.
       MDV_GIT_NAME: mdv
