@@ -27,6 +27,7 @@ notes are still just files.
 - [Quick start](#quick-start)
 - [Using your own notes](#using-your-own-notes)
 - [Syncing with GitHub](#syncing-with-github)
+- [Serving over HTTPS](#serving-over-https)
 - [Configuration](#configuration)
 - [Security](#security)
 - [Keyboard shortcuts](#keyboard-shortcuts)
@@ -118,6 +119,39 @@ uid 1000 and not group- or world-readable.
 Pulls merge rather than rebase. If a merge conflicts, the affected notes get
 `<<<<<<<` markers. Fix them in the editor and commit.
 
+## Serving over HTTPS
+
+mdv can serve HTTPS itself if you give it a certificate and key (PEM files). The
+certificate must be issued for the name you browse to, and trusted by that
+machine. You can reuse a certificate another app on the same machine already uses,
+on a different port.
+
+1. Mount the folder holding the files and publish a port in `docker-compose.yml`:
+
+   ```yaml
+   ports:
+     - "8443:8080"
+   volumes:
+     - vault:/vault
+     - /path/to/certs:/certs:ro
+   ```
+
+2. Point mdv at them in `.env`:
+
+   ```sh
+   MDV_TLS_CERT=/certs/cert.pem
+   MDV_TLS_KEY=/certs/key.pem
+   ```
+
+3. Run `docker compose up -d` and open `https://<hostname>:8443`.
+
+The container runs as uid 1000, so the key must be readable by that user. When the
+files change (say, a renewed certificate), mdv picks them up within a minute
+without a restart.
+
+Prefer a reverse proxy such as Caddy or Traefik if you want automatic certificates
+from Let's Encrypt.
+
 ## Configuration
 
 Everything is set with environment variables, either in `docker-compose.yml` or in
@@ -129,6 +163,7 @@ automatically and ignored by git.
 | `MDV_PASSWORD` | _(unset)_ | Require this password to sign in |
 | `MDV_VAULT` | `/vault` | Vault folder |
 | `MDV_ADDR` | `:8080` | Listen address |
+| `MDV_TLS_CERT` / `MDV_TLS_KEY` | _(unset)_ | Serve HTTPS with this certificate and key (PEM). Set both or neither |
 | `MDV_GIT_NAME` / `MDV_GIT_EMAIL` | `mdv` / `mdv@localhost` | Author for commits made from the app |
 | `MDV_GIT_REMOTE` | _(unset)_ | On start, clone this repo into an empty vault, or set it as `origin` if the vault is already a repo |
 | `MDV_AUTO_COMMIT` | _(unset)_ | Commit changes on this interval, e.g. `10m` (minimum `1m`) |
@@ -145,8 +180,8 @@ tabs, folder state and sidebar width are remembered per browser.
 > Without `MDV_PASSWORD`, anyone who can reach the port can read and edit your notes.
 
 - Set a password, or publish the port only on localhost (`"127.0.0.1:8080:8080"`).
-- If mdv is reachable from outside your network, put it behind HTTPS, for example
-  with a reverse proxy such as Caddy or Traefik.
+- If mdv is reachable from other machines, serve it over HTTPS, either
+  [built in](#serving-over-https) or behind a reverse proxy such as Caddy or Traefik.
 - Keep tokens in `.env`, never in `docker-compose.yml`.
 
 ## Keyboard shortcuts
