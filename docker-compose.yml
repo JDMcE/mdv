@@ -20,9 +20,8 @@ services:
       MDV_GIT_NAME: mdv
       MDV_GIT_EMAIL: mdv@localhost
 
-      # Remote to sync with. An HTTPS URL with a GitHub fine-grained token
-      # (Contents: read & write) is the simplest option:
-      # MDV_GIT_REMOTE: https://<your-username>:<token>@github.com/<your-username>/<notes>.git
+      # Remote to sync with (MDV_GIT_REMOTE) contains a token, so set it in .env.
+      # An empty vault is cloned from it on first start.
 
       # Commit every 10 minutes when there are changes; also pull + push if true.
       MDV_AUTO_COMMIT: 10m
