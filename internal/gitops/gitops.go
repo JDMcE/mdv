@@ -338,6 +338,34 @@ func (g *Git) SetRemote(url string) error {
 	return err
 }
 
+// ErrNotEmpty is returned by Clone when the vault already has files in it.
+var ErrNotEmpty = errors.New("the vault folder is not empty")
+
+// Clone fills an empty vault with a clone of url. An empty remote gives an
+// empty repository on branch main, ready for the first push.
+func (g *Git) Clone(url string) error {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	entries, err := os.ReadDir(g.root)
+	if err != nil {
+		return err
+	}
+	if len(entries) > 0 {
+		return ErrNotEmpty
+	}
+	ctx, cancel := timeout(10 * time.Minute)
+	defer cancel()
+	if _, err := g.run(ctx, "clone", "--", url, "."); err != nil {
+		// git doesn't always strip credentials from its messages.
+		return errors.New(strings.ReplaceAll(err.Error(), url, MaskURL(url)))
+	}
+	if _, err := g.run(ctx, "rev-parse", "--verify", "HEAD"); err != nil {
+		// Nothing on the remote yet: use the same branch name as Init.
+		g.run(ctx, "symbolic-ref", "HEAD", "refs/heads/main")
+	}
+	return nil
+}
+
 type Commit struct {
 	Hash    string `json:"hash"`
 	Short   string `json:"short"`

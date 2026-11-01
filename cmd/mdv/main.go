@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"log"
 	"net/http"
 	"os"
@@ -21,6 +22,27 @@ func env(key, def string) string {
 	return def
 }
 
+// setupRemote points an existing repo at remote, or clones remote into an
+// empty vault so a fresh install starts with the notes already on GitHub.
+func setupRemote(git *gitops.Git, remote string) {
+	masked := gitops.MaskURL(remote)
+	if git.IsRepo() {
+		if err := git.SetRemote(remote); err != nil {
+			log.Printf("git remote: %v", err)
+		}
+		return
+	}
+	switch err := git.Clone(remote); {
+	case err == nil:
+		log.Printf("cloned %s into the empty vault", masked)
+	case errors.Is(err, gitops.ErrNotEmpty):
+		log.Printf("MDV_GIT_REMOTE ignored: the vault has files but isn't a git repo. " +
+			"Initialize it in the Git panel and restart, or start from an empty vault to clone.")
+	default:
+		log.Printf("git clone %s failed: %v", masked, err)
+	}
+}
+
 func main() {
 	root := env("MDV_VAULT", "/vault")
 	addr := env("MDV_ADDR", ":8080")
@@ -29,16 +51,15 @@ func main() {
 	if err != nil {
 		log.Fatalf("open vault: %v", err)
 	}
+	// Set up git before indexing so a first-run clone is picked up by the index.
+	git := gitops.New(v.Root, env("MDV_GIT_NAME", "mdv"), env("MDV_GIT_EMAIL", "mdv@localhost"))
+	if remote := os.Getenv("MDV_GIT_REMOTE"); remote != "" {
+		setupRemote(git, remote)
+	}
+
 	ix := index.New(v)
 	if err := ix.Watch(); err != nil {
 		log.Printf("file watching disabled: %v", err)
-	}
-
-	git := gitops.New(v.Root, env("MDV_GIT_NAME", "mdv"), env("MDV_GIT_EMAIL", "mdv@localhost"))
-	if remote := os.Getenv("MDV_GIT_REMOTE"); remote != "" && git.IsRepo() {
-		if err := git.SetRemote(remote); err != nil {
-			log.Printf("git remote: %v", err)
-		}
 	}
 	if every := os.Getenv("MDV_AUTO_COMMIT"); every != "" {
 		d, err := time.ParseDuration(every)

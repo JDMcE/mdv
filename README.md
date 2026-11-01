@@ -86,12 +86,15 @@ volumes:
   - ./vault:/vault          # or D:/Notes:/vault on Windows
 ```
 
-**An existing git repo.** Clone it into the (empty) volume. Create a token with
-*Contents: read and write* first:
+**An existing git repo.** Create a token with *Contents: read and write*, then add
+the repo to `.env` before the first start:
 
 ```sh
-docker compose exec mdv git clone https://<token>@github.com/<you>/<repo>.git /vault
+MDV_GIT_REMOTE=https://<user>:<token>@github.com/<user>/<repo>.git
 ```
+
+On first start, mdv clones the repo into the empty volume, so your notes are there
+straight away.
 
 > [!NOTE]
 > On Docker Desktop for Windows, a named volume lives inside the WSL2 virtual disk,
@@ -104,7 +107,9 @@ docker compose exec mdv git clone https://<token>@github.com/<you>/<repo>.git /v
 1. Create a **private** repository.
 2. Create a fine-grained token with **Contents: read and write** on that repo only.
 3. Set the remote, either in the app (**Git → set remote…**) or with
-   `MDV_GIT_REMOTE=https://<user>:<token>@github.com/<user>/<repo>.git`.
+   `MDV_GIT_REMOTE=https://<user>:<token>@github.com/<user>/<repo>.git` in `.env`.
+   If the vault is empty, mdv clones the repo on start, whether it's empty or
+   already has notes in it.
 4. In the Git panel, click **Initialize repository** if needed, then **Sync**.
 
 SSH remotes work too: mount a key into `/home/mdv/.ssh/`. It must be readable by
@@ -125,7 +130,7 @@ automatically and ignored by git.
 | `MDV_VAULT` | `/vault` | Vault folder |
 | `MDV_ADDR` | `:8080` | Listen address |
 | `MDV_GIT_NAME` / `MDV_GIT_EMAIL` | `mdv` / `mdv@localhost` | Author for commits made from the app |
-| `MDV_GIT_REMOTE` | _(unset)_ | Set `origin` to this URL on start (if the vault is already a repo) |
+| `MDV_GIT_REMOTE` | _(unset)_ | On start, clone this repo into an empty vault, or set it as `origin` if the vault is already a repo |
 | `MDV_AUTO_COMMIT` | _(unset)_ | Commit changes on this interval, e.g. `10m` (minimum `1m`) |
 | `MDV_AUTO_PUSH` | `false` | Also pull and push after each auto-commit |
 | `MDV_ATTACHMENTS` | `attachments` | Folder for pasted files (Obsidian's own setting wins if present) |

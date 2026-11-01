@@ -71,6 +71,57 @@ func TestFlow(t *testing.T) {
 	}
 }
 
+func TestClone(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not installed")
+	}
+	// Seed a bare remote with one note.
+	remote := t.TempDir()
+	exec.Command("git", "init", "--bare", "-b", "main", remote).Run()
+	src := New(t.TempDir(), "tester", "t@example.com")
+	src.Init()
+	os.WriteFile(filepath.Join(src.root, "note.md"), []byte("hello"), 0o644)
+	src.Commit("seed")
+	src.SetRemote(remote)
+	if _, err := src.Push(); err != nil {
+		t.Fatal(err)
+	}
+
+	dst := New(t.TempDir(), "tester", "t@example.com")
+	if err := dst.Clone(remote); err != nil {
+		t.Fatal(err)
+	}
+	if b, err := os.ReadFile(filepath.Join(dst.root, "note.md")); err != nil || string(b) != "hello" {
+		t.Fatalf("cloned note = %q %v", b, err)
+	}
+	st, err := dst.Status()
+	if err != nil || st.Upstream == "" || len(st.Files) != 0 {
+		t.Errorf("after clone: %+v %v", st, err)
+	}
+
+	// A vault with files in it is left alone.
+	busy := New(t.TempDir(), "tester", "t@example.com")
+	os.WriteFile(filepath.Join(busy.root, "mine.md"), []byte("x"), 0o644)
+	if err := busy.Clone(remote); err != ErrNotEmpty {
+		t.Errorf("clone into non-empty dir: %v", err)
+	}
+
+	// An empty remote gives a repo on main that can push.
+	empty := t.TempDir()
+	exec.Command("git", "init", "--bare", empty).Run()
+	fresh := New(t.TempDir(), "tester", "t@example.com")
+	if err := fresh.Clone(empty); err != nil {
+		t.Fatal(err)
+	}
+	os.WriteFile(filepath.Join(fresh.root, "a.md"), []byte("a"), 0o644)
+	if res, err := fresh.Sync(""); err != nil || !strings.Contains(res, "pushed") {
+		t.Fatalf("sync after empty clone: %q %v", res, err)
+	}
+	if out, _ := exec.Command("git", "-C", empty, "branch").Output(); !strings.Contains(string(out), "main") {
+		t.Errorf("empty remote branches: %q", out)
+	}
+}
+
 func TestMaskURL(t *testing.T) {
 	if got := MaskURL("https://user:tok@github.com/a/b.git"); got != "https://***@github.com/a/b.git" {
 		t.Error(got)
