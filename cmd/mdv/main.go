@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/tls"
 	"errors"
 	"log"
 	"net/http"
@@ -9,6 +10,7 @@ import (
 	"time"
 
 	"mdv/internal/auth"
+	"mdv/internal/certs"
 	"mdv/internal/gitops"
 	"mdv/internal/index"
 	"mdv/internal/server"
@@ -46,6 +48,10 @@ func setupRemote(git *gitops.Git, remote string) {
 func main() {
 	root := env("MDV_VAULT", "/vault")
 	addr := env("MDV_ADDR", ":8080")
+	certFile, keyFile := os.Getenv("MDV_TLS_CERT"), os.Getenv("MDV_TLS_KEY")
+	if (certFile == "") != (keyFile == "") {
+		log.Fatalf("set both MDV_TLS_CERT and MDV_TLS_KEY to serve HTTPS, or neither")
+	}
 
 	v, err := vault.New(root)
 	if err != nil {
@@ -82,7 +88,16 @@ func main() {
 		log.Printf("no MDV_PASSWORD set: anyone who can reach %s can use this vault", addr)
 	}
 
-	log.Printf("mdv serving %s on %s", v.Root, addr)
 	srv := &http.Server{Addr: addr, Handler: h, ReadHeaderTimeout: 10 * time.Second}
+	if certFile != "" {
+		c, err := certs.New(certFile, keyFile)
+		if err != nil {
+			log.Fatalf("tls: %v", err)
+		}
+		srv.TLSConfig = &tls.Config{GetCertificate: c.GetCertificate, MinVersion: tls.VersionTLS12}
+		log.Printf("mdv serving %s on %s (https)", v.Root, addr)
+		log.Fatal(srv.ListenAndServeTLS("", ""))
+	}
+	log.Printf("mdv serving %s on %s", v.Root, addr)
 	log.Fatal(srv.ListenAndServe())
 }

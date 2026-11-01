@@ -8,6 +8,9 @@ services:
       # A named volume keeps notes inside Docker's VM (out of reach of host AV).
       # Swap for a bind mount (e.g. ./vault:/vault) to edit an existing folder.
       - vault:/vault
+      # For HTTPS, mount your certificate folder and set MDV_TLS_CERT/MDV_TLS_KEY
+      # in .env (see README), e.g.:
+      # - /path/to/certs:/certs:ro
     # Secrets such as MDV_PASSWORD live in .env, which git ignores.
     env_file:
       - path: .env
