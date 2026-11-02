@@ -524,6 +524,10 @@ function build(view: EditorView, host: LinkHost): DecorationSet {
           case "Link": {
             // "> [!note] Title" is a callout marker, not a link (styled below).
             if (/^\[![\w-]+\]/.test(doc.sliceString(node.from, node.to))) return false;
+            // The "[name]" inside "[[name]]" parses as a reference link; the
+            // wikilink pass below owns it.
+            if (doc.sliceString(node.from - 1, node.from) === "[" && doc.sliceString(node.to, node.to + 1) === "]")
+              return false;
             const n = node.node;
             const marks = n.getChildren("LinkMark");
             const url = n.getChild("URL");
@@ -1040,7 +1044,7 @@ export function linkHandlers(host: LinkHost) {
         return true;
       }
 
-      const link = t.closest<HTMLElement>(".cm-lp-wikilink, .cm-lp-link");
+      const link = t.closest<HTMLElement>(".cm-lp-wikilink") ?? t.closest<HTMLElement>(".cm-lp-link");
       if (!link || e.button !== 0) return false;
       // Rendered links follow on a plain click. On the line being edited (or
       // in source mode) a plain click just places the cursor; Ctrl/Cmd follows.

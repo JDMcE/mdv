@@ -39,7 +39,7 @@ export function promptBox(title: string, value = "", select?: [number, number]):
   });
 }
 
-export function confirmBox(message: string, okLabel = "Delete"): Promise<boolean> {
+export function confirmBox(message: string, okLabel = "Delete", danger = true): Promise<boolean> {
   return new Promise((resolve) => {
     const o = overlay();
     const box = document.createElement("div");
@@ -51,7 +51,7 @@ export function confirmBox(message: string, okLabel = "Delete"): Promise<boolean
     const cancel = document.createElement("button");
     cancel.textContent = "Cancel";
     const ok = document.createElement("button");
-    ok.className = "danger";
+    if (danger) ok.className = "danger";
     ok.textContent = okLabel;
     row.append(cancel, ok);
     box.append(p, row);
