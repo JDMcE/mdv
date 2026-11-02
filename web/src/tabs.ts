@@ -5,7 +5,7 @@ import { EditMode, editorExtensions, modeExtension, modeSlot } from "./editor";
 import { basename, dirname, isImage, isNote, isPdf, normalize, stripMd, vaultFiles } from "./links";
 import type { MapView } from "./filemap";
 import { bodyStart, LinkHost, refreshDecorations } from "./livepreview";
-import { toast } from "./ui";
+import { confirmBox, toast } from "./ui";
 
 export type Mode = EditMode | "read";
 
@@ -291,6 +291,7 @@ export class Tabs {
       const rel = name.includes("/") ? name : (dirname(from) ? dirname(from) + "/" : "") + name;
       const p = normalize(/\.[^/.]+$/.test(basename(rel)) ? rel : rel + ".md");
       if (!p) return;
+      if (!(await confirmBox(`“${stripMd(p)}” doesn't exist yet. Create ${p}?`, "Create", false))) return;
       try {
         await api.create(p);
       } catch (e) {
