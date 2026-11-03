@@ -78,6 +78,37 @@ Open <http://localhost:8080>. Notes are stored in the `vault` Docker volume.
 The bundled `docker-compose.yml` turns on auto-commit every 10 minutes with
 auto-push. Edit it if you'd rather commit by hand.
 
+### One command, no clone
+
+Docker can build straight from the GitHub repo, so you don't need a local copy of
+the source. Put your settings in an env file (for example `mdv.env`) somewhere
+safe:
+
+```sh
+MDV_PASSWORD=change-me
+MDV_GIT_REMOTE=https://<user>:<token>@github.com/<user>/<notes>.git
+MDV_AUTO_COMMIT=10m
+MDV_AUTO_PUSH=true
+```
+
+Then build and start it in one go:
+
+```sh
+docker build -t mdv https://github.com/JDMcE/mdv.git && \
+docker run -d --name mdv -p 8080:8080 -v mdv-vault:/vault \
+  --env-file mdv.env --restart unless-stopped mdv
+```
+
+On first start the `mdv-vault` volume is empty, so mdv clones your notes repo into
+it and they're ready at <http://localhost:8080>. Auto-commit with push keeps
+GitHub up to date from then on.
+
+- Build a specific branch or tag with `https://github.com/JDMcE/mdv.git#main`.
+- To update, run the same `docker build`, then `docker rm -f mdv` and the same
+  `docker run`. Your notes live in the volume, so they survive.
+- Use `--env-file` rather than `-e MDV_GIT_REMOTE=…` so your token doesn't end up
+  in your shell history.
+
 ## Using your own notes
 
 **An existing folder.** Swap the named volume in `docker-compose.yml` for a bind mount:
