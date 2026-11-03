@@ -5,7 +5,7 @@
 <h1 align="center">mdv</h1>
 
 <p align="center">
-  A small, fast, self-hosted markdown notes app inspired by Obsidian.<br>
+  A small, fast, self-hosted markdown notes app<br>
   Your notes stay plain <code>.md</code> files in a folder, edited in the browser and backed up with git.
 </p>
 
@@ -15,11 +15,6 @@ mdv is a single Go binary with an embedded web UI, shipped as a Docker image. Po
 it at a folder of markdown files (an existing Obsidian vault works as-is) and you
 get a live-preview editor, wikilinks, search and git sync from any browser,
 including your phone.
-
-**Why it exists:** keeping notes in a Docker volume puts them out of reach of
-overzealous host antivirus, and git sync to a private repo means there's always a
-copy somewhere else. No proprietary format, no lock-in: stop using mdv and your
-notes are still just files.
 
 ## Contents
 
