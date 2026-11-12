@@ -102,6 +102,15 @@ export const api = {
   async links(path: string): Promise<LinksInfo> {
     return (await check(await fetch("/api/links" + q(path)))).json();
   },
+  /** Non-note files that no note links to or embeds. */
+  async orphans(): Promise<Orphan[]> {
+    return (await check(await fetch("/api/orphans"))).json();
+  },
+  /** Delete files that are still orphans; others are skipped. */
+  async deleteOrphans(paths: string[]): Promise<{ deleted: string[]; skipped: string[] }> {
+    const res = await fetch("/api/orphans/delete", { method: "POST", body: JSON.stringify({ paths }) });
+    return (await check(res)).json();
+  },
   async config(): Promise<{ auth: boolean }> {
     return (await check(await fetch("/api/config"))).json();
   },
@@ -129,6 +138,12 @@ export const api = {
 
 /** URL for a vault file's raw bytes (images etc.). */
 export const rawUrl = (path: string) => "/api/raw" + q(path);
+
+export interface Orphan {
+  path: string;
+  size: number;
+  mtime: number;
+}
 
 export interface LinkRef {
   path: string;

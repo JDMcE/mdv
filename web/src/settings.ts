@@ -1,3 +1,5 @@
+import { openOrphans } from "./orphans";
+
 // User preferences. They belong to the vault (stored server-side in
 // .mdv/settings.json, so they follow it across browsers and git sync); the
 // browser keeps a cached copy so the page renders without a flash of defaults.
@@ -212,6 +214,15 @@ export function openSettings(extra: { auth: boolean }) {
     "Live preview & reading view. Ctrl+Home shows the YAML for editing",
   );
   row("Show attachments in file tree", toggle("showAttachments"), "Images, PDFs and other files");
+  const clean = document.createElement("button");
+  clean.className = "btn";
+  clean.type = "button";
+  clean.textContent = "Review…";
+  clean.onclick = () => {
+    overlay.remove();
+    openOrphans();
+  };
+  row("Unused attachments", clean, "Find and delete files no note links to");
   row("Line numbers", toggle("lineNumbers"));
   row("Spellcheck", toggle("spellcheck"));
   const note = document.createElement("p");

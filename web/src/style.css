@@ -934,6 +934,38 @@ body.no-line-numbers #editor .cm-gutters { display: none; }
 }
 .setting input[type="checkbox"] { accent-color: var(--accent); width: 16px; height: 16px; }
 .settings .dialog-buttons { margin-top: 12px; }
+.setting .btn { font-size: 13px; padding: 4px 10px; white-space: nowrap; }
+
+.overlay:has(.orphans) { padding-top: 6vh; }
+.orphans { width: min(640px, calc(100vw - 32px)); max-height: 86vh; }
+.orphans h2 { margin: 0; font-size: 17px; }
+.orphans-summary { font-size: 13px; color: var(--text-muted); }
+.orphans-list { overflow-y: auto; min-height: 0; flex: 1; border: 1px solid var(--border); border-radius: 6px; }
+.orphans-list:empty { display: none; }
+.orphans label { color: var(--text); font-size: 13px; }
+.orphans input[type="checkbox"] { accent-color: var(--accent); width: 15px; height: 15px; flex: none; }
+.orphans-folder {
+  display: flex; align-items: center; gap: 8px;
+  position: sticky; top: 0; z-index: 1;
+  padding: 6px 10px; background: var(--bg-alt); border-bottom: 1px solid var(--border);
+  font-weight: 600; color: var(--text-muted) !important;
+}
+.orphans-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 4px 10px 4px 18px; border-bottom: 1px solid var(--border);
+}
+.orphans-item:hover { background: var(--bg-hover); }
+.orphans-thumb {
+  width: 36px; height: 36px; flex: none; display: grid; place-items: center;
+  border-radius: 4px; background: var(--bg); overflow: hidden;
+  font-size: 10px; color: var(--text-faint);
+}
+.orphans-thumb img { width: 100%; height: 100%; object-fit: cover; }
+.orphans-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: inherit; text-decoration: none; }
+.orphans-name:hover { text-decoration: underline; }
+.orphans-item small { color: var(--text-faint); font-size: 12px; white-space: nowrap; }
+.orphans-all { margin-right: auto; display: flex; align-items: center; gap: 6px; }
+.orphans .dialog-buttons button:disabled { opacity: 0.5; cursor: default; }
 
 .overlay:has(.version) { padding-top: 5vh; }
 .version {

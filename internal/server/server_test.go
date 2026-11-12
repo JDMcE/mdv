@@ -158,3 +158,36 @@ func TestSettings(t *testing.T) {
 		t.Errorf(".mdv listed in tree: %s", b)
 	}
 }
+
+func TestDeleteOrphans(t *testing.T) {
+	srv, dir := setup(t, map[string]string{
+		"a.md":                 "![[keep.png]]",
+		"attachments/keep.png": "k",
+		"attachments/gone.png": "g",
+	})
+	res, err := http.Get(srv.URL + "/api/orphans")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var list []struct{ Path string }
+	json.NewDecoder(res.Body).Decode(&list)
+	if len(list) != 1 || list[0].Path != "attachments/gone.png" {
+		t.Fatalf("orphans = %+v", list)
+	}
+	// keep.png is in use and a.md isn't an attachment: both must survive.
+	res, err = http.Post(srv.URL+"/api/orphans/delete", "application/json",
+		strings.NewReader(`{"paths":["attachments/gone.png","attachments/keep.png","a.md","../x"]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out struct{ Deleted, Skipped []string }
+	json.NewDecoder(res.Body).Decode(&out)
+	if len(out.Deleted) != 1 || out.Deleted[0] != "attachments/gone.png" || len(out.Skipped) != 3 {
+		t.Errorf("result = %+v", out)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "attachments", "gone.png")); !os.IsNotExist(err) {
+		t.Error("gone.png still exists")
+	}
+	read(t, dir, "attachments/keep.png")
+	read(t, dir, "a.md")
+}

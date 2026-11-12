@@ -55,6 +55,8 @@ func New(v *vault.Vault, ix *index.Index, git *gitops.Git, cfg Config) *Server {
 	m.HandleFunc("POST /api/upload", s.upload)
 	m.HandleFunc("GET /api/search", s.search)
 	m.HandleFunc("GET /api/links", s.links)
+	m.HandleFunc("GET /api/orphans", s.orphans)
+	m.HandleFunc("POST /api/orphans/delete", s.deleteOrphans)
 	m.HandleFunc("GET /api/events", s.events)
 
 	m.HandleFunc("GET /api/git/status", s.gitStatus)
@@ -320,6 +322,42 @@ func (s *Server) search(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) links(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, s.ix.Links(r.URL.Query().Get("path")))
+}
+
+func (s *Server) orphans(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, s.ix.Orphans())
+}
+
+// deleteOrphans removes the given files, but only those that are still
+// orphans now — a note may have started using one since the list was shown.
+func (s *Server) deleteOrphans(w http.ResponseWriter, r *http.Request) {
+	var req struct{ Paths []string }
+	if err := json.NewDecoder(io.LimitReader(r.Body, 4<<20)).Decode(&req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	orphan := map[string]bool{}
+	for _, o := range s.ix.Orphans() {
+		orphan[o.Path] = true
+	}
+	res := struct {
+		Deleted []string `json:"deleted"`
+		Skipped []string `json:"skipped"`
+	}{Deleted: []string{}, Skipped: []string{}}
+	for _, p := range req.Paths {
+		if !orphan[p] {
+			res.Skipped = append(res.Skipped, p)
+			continue
+		}
+		if err := s.v.Delete(p); err != nil {
+			log.Printf("delete orphan %s: %v", p, err)
+			res.Skipped = append(res.Skipped, p)
+			continue
+		}
+		s.ix.Refresh(p)
+		res.Deleted = append(res.Deleted, p)
+	}
+	writeJSON(w, res)
 }
 
 // events streams vault changes to the browser as server-sent events.
