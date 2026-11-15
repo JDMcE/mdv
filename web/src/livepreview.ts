@@ -15,8 +15,11 @@ import { contextMenu, copyButton, MenuItem } from "./ui";
 export interface LinkHost {
   /** Path of the note being edited. */
   path: () => string;
-  /** Follow a link target; newTab for Ctrl/Cmd-click. `from`: the note the link is written in, if not this one. */
-  follow: (target: string, wiki: boolean, newTab: boolean, from?: string) => void;
+  /**
+   * Follow a link target; newTab for Ctrl/Cmd-click, "side" (the other pane)
+   * for Ctrl/Cmd+Shift-click. `from`: the note the link is written in, if not this one.
+   */
+  follow: (target: string, wiki: boolean, newTab: boolean | "side", from?: string) => void;
   /** Open an image in the viewer. */
   openFile: (path: string, newTab: boolean) => void;
 }
@@ -692,8 +695,9 @@ function followInBlock(e: MouseEvent, host: LinkHost, from?: string): boolean {
   if (!a) return false;
   e.preventDefault();
   const mod = e.ctrlKey || e.metaKey;
-  if (a.dataset.target !== undefined) host.follow(a.dataset.target, true, mod, from);
-  else if (a.dataset.href) host.follow(a.dataset.href, false, mod, from);
+  const where = mod && e.shiftKey ? "side" : mod;
+  if (a.dataset.target !== undefined) host.follow(a.dataset.target, true, where, from);
+  else if (a.dataset.href) host.follow(a.dataset.href, false, where, from);
   else if (a.href && a.target === "_blank") window.open(a.href, "_blank", "noopener,noreferrer");
   return true;
 }
@@ -1055,8 +1059,9 @@ export function linkHandlers(host: LinkHost) {
       if (editing && !mod) return false;
 
       e.preventDefault();
-      if (link.dataset.target !== undefined) host.follow(link.dataset.target, true, mod);
-      else if (link.dataset.href) host.follow(link.dataset.href, false, mod);
+      const where = mod && e.shiftKey ? "side" : mod;
+      if (link.dataset.target !== undefined) host.follow(link.dataset.target, true, where);
+      else if (link.dataset.href) host.follow(link.dataset.href, false, where);
       return true;
     },
   });

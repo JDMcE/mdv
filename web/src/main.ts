@@ -129,6 +129,7 @@ settingsBtn.onclick = () => openSettings({ auth: authEnabled });
   settingsBtn.replaceChildren(svg);
 }
 document.getElementById("status-mode")!.onclick = () => tabs.cycleMode();
+document.getElementById("toggle-split")!.onclick = () => tabs.toggleSplit();
 
 // ---------- global shortcuts ----------
 // Capture phase so they work even when the editor has focus. Ctrl+N / Ctrl+W /
@@ -161,7 +162,10 @@ document.addEventListener(
     else if (e.altKey && !mod && e.key === "ArrowRight") tabs.history(1);
     else if (mod && e.altKey && e.key === "ArrowRight") tabs.next(1);
     else if (mod && e.altKey && e.key === "ArrowLeft") tabs.next(-1);
-    else if (mod && e.key === "\\") toggleSidebar();
+    else if (e.altKey && !mod && e.code === "Backslash") {
+      if (e.shiftKey) tabs.focusOther();
+      else tabs.toggleSplit();
+    } else if (mod && e.key === "\\") toggleSidebar();
     else if (e.altKey && !mod && k === "b") {
       if (tabs.activePath) bookmarks.toggle(tabs.activePath);
     }

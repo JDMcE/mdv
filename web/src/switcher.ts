@@ -132,11 +132,11 @@ export class Switcher {
       [...list.children].forEach((c, i) => c.classList.toggle("selected", i === sel));
       list.children[sel]?.scrollIntoView({ block: "nearest" });
     };
-    const choose = (background: boolean) => {
+    const choose = (background: boolean, side = false) => {
       const it = items[sel];
       if (!it) return; // creating is explicit (Shift+Enter), never a fallback
       close();
-      this.tabs.open(it.path, { background });
+      this.tabs.open(it.path, side ? { side } : { background });
     };
     const create = () => {
       const name = input.value.trim();
@@ -154,6 +154,7 @@ export class Switcher {
       else if (e.key === "ArrowUp" || (e.ctrlKey && e.key === "p")) sel = n ? (sel - 1 + n) % n : 0;
       else if (e.key === "PageDown") sel = Math.min(n - 1, sel + 10);
       else if (e.key === "PageUp") sel = Math.max(0, sel - 10);
+      else if (e.key === "Enter" && e.altKey) choose(false, true);
       else if (e.key === "Enter" && e.shiftKey) create();
       else if (e.key === "Enter") choose(e.ctrlKey || e.metaKey);
       else if (e.key === "Escape") {

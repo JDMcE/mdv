@@ -35,6 +35,7 @@ including your phone.
 - Syntax highlighting in fenced code blocks (bash, PowerShell, Python, SQL, YAML, …)
 - Tables render in live preview; find & replace within a note
 - Autosave, tabs, back/forward history
+- Split view: two notes side by side, each pane with its own tabs (drag tabs between them)
 
 **Linking**
 - `[[wikilinks]]` with autocomplete, a backlinks panel, and links updated automatically on rename
@@ -226,6 +227,9 @@ tabs, folder state and sidebar width are remembered per browser.
 | `Alt+W` | Close tab |
 | `Alt+←` / `Alt+→` | Back / forward |
 | `Ctrl+Alt+←/→`, `Alt+1…9` | Switch tabs |
+| `Alt+\` | Split view / back to one pane |
+| `Alt+Shift+\` | Focus the other pane |
+| `Ctrl+Shift+click` a link | Open it in the other pane |
 | `Ctrl+B` / `Ctrl+I` / `Ctrl+K` | Bold / italic / link |
 | `Ctrl+Shift+H` | Highlight |
 | `Ctrl+\` | Toggle sidebar |
