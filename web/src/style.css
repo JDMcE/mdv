@@ -1312,6 +1312,12 @@ body.no-filemap #filemap, #filemap.empty { display: none; }
 
 .pane-editor .reader { overflow: visible; min-height: 0; white-space: normal; }
 .pane-editor .cm-lp-table, .pane-editor .cm-lp-embed-note { padding: 4px 0; cursor: text; }
+.pane-editor .cm-lp-mermaid { padding: 4px 0; cursor: pointer; }
+
+/* Mermaid diagrams (reading view, live preview, exports). */
+.reader .mermaid-diagram { margin-bottom: 0.9em; overflow-x: auto; text-align: center; }
+.reader .mermaid-diagram svg { max-width: 100%; height: auto; }
+.reader .mermaid-error pre { color: var(--danger); white-space: pre-wrap; text-align: left; }
 .pane-editor .cm-lp-table > *, .pane-editor .cm-lp-embed-note > * { max-width: none; margin-left: 0; margin-right: 0; }
 .pane-editor .cm-lp-table table { margin: 0; }
 .pane-editor .cm-lp-table-src { font-family: var(--font-mono); font-size: 0.9em; }

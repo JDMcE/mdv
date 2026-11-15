@@ -34,6 +34,7 @@ including your phone.
 - Live preview that hides markdown syntax away from the cursor, plus source mode and a reading view
 - Syntax highlighting in fenced code blocks (bash, PowerShell, Python, SQL, YAML, …)
 - Tables render in live preview; find & replace within a note
+- Mermaid diagrams in ` ```mermaid ` blocks, rendered in live preview and reading view in your theme's colours
 - Autosave, tabs, back/forward history
 - Split view: two notes side by side, each pane with its own tabs (drag tabs between them)
 
@@ -57,6 +58,7 @@ including your phone.
 - Works on phones: the sidebar becomes a drawer
 - Live updates when files change on disk
 - Dark-first themes, installable as an app (PWA), optional password
+- Export a note as a standalone HTML file (images inlined, diagrams included) or download the raw markdown, from the tab or file tree menu
 
 ## Quick start
 

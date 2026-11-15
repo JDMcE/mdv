@@ -2,6 +2,7 @@ import { EditorState, StateEffect, Text } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { api, ConflictError, rawUrl } from "./api";
 import { EditMode, editorExtensions, modeExtension, modeSlot } from "./editor";
+import { exportItems } from "./export";
 import { basename, dirname, isImage, isNote, isPdf, normalize, stripMd, vaultFiles } from "./links";
 import type { MapView } from "./filemap";
 import { bodyStart, LinkHost, refreshDecorations } from "./livepreview";
@@ -665,6 +666,7 @@ export class Tabs {
     if (other) items.push({ label: `Move to ${side} pane`, run: () => this.moveTab(p, i, other, other.active + 1) });
     else if (p.tabs.length > 1) items.push({ label: "Move to the side", hint: "Alt+\\", run: () => this.toSide(p, i) });
     items.push({ label: "Copy path", run: () => navigator.clipboard?.writeText(t.path).catch(() => {}) });
+    items.push(...exportItems(t.path));
     contextMenu(x, y, items);
   }
 

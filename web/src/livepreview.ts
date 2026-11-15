@@ -7,6 +7,7 @@ import { Decoration, DecorationSet, EditorView, ViewPlugin, ViewUpdate, WidgetTy
 import { SyntaxNode } from "@lezer/common";
 import { rawUrl } from "./api";
 import { embedVersion } from "./embeds";
+import { renderMermaid } from "./mermaid";
 import { dirname, isImage, isNote, normalize, parseSize, parseWiki, stripMd, vaultFiles, WIKI_RE } from "./links";
 import { settings } from "./settings";
 import * as tables from "./tables";
@@ -898,6 +899,46 @@ class NoteEmbedWidget extends WidgetType {
   }
 }
 
+/** A ```mermaid block shown as its diagram; clicking it edits the source. */
+class MermaidWidget extends WidgetType {
+  constructor(readonly src: string) {
+    super();
+  }
+  eq(o: MermaidWidget) {
+    return o.src === this.src;
+  }
+  toDOM(view: EditorView) {
+    const wrap = document.createElement("div");
+    wrap.className = "cm-lp-mermaid reader";
+    const key = "m:" + this.src;
+    const h = blockHeights.get(key);
+    if (h) wrap.style.minHeight = h + "px";
+    const box = document.createElement("div");
+    wrap.append(box);
+    renderMermaid(box, this.src).then(() => {
+      wrap.style.minHeight = "";
+      view.requestMeasure();
+    });
+    rememberHeight(key, wrap, view);
+    wrap.onmousedown = (e) => {
+      if (e.button !== 0) return;
+      e.preventDefault();
+      // Cursor on the first line of the diagram source.
+      const at = view.state.doc.lineAt(view.posAtDOM(wrap));
+      const next = at.number < view.state.doc.lines ? view.state.doc.line(at.number + 1) : at;
+      view.dispatch({ selection: { anchor: next.from } });
+      view.focus();
+    };
+    return wrap;
+  }
+  get estimatedHeight() {
+    return blockHeights.get("m:" + this.src) ?? 200;
+  }
+  ignoreEvent() {
+    return true;
+  }
+}
+
 const EMBED_LINE = /^\s*!\[\[([^\[\]\n]+?)\]\]\s*$/;
 
 /**
@@ -916,7 +957,21 @@ function blockWidgets(host: LinkHost) {
     };
     syntaxTree(state).iterate({
       enter: (node) => {
-        if (node.name === "FencedCode" || node.name === "CodeBlock" || node.name === "Frontmatter") return false;
+        if (node.name === "FencedCode") {
+          const info = node.node.getChild("CodeInfo");
+          const last = node.node.lastChild;
+          if (!info || doc.sliceString(info.from, info.to).trim().toLowerCase() !== "mermaid") return false;
+          const a = doc.lineAt(node.from);
+          const b = doc.lineAt(node.to);
+          if (!/^\s*(`{3,}|~{3,})/.test(a.text)) return false; // inside a quote or list item
+          const closed = last?.name === "CodeMark" && last.from > info.to;
+          if (closed && b.number > a.number + 1 && !anyActive(a.number, b.number)) {
+            const src = doc.sliceString(a.to + 1, doc.line(b.number - 1).to);
+            out.push(Decoration.replace({ widget: new MermaidWidget(src), block: true }).range(a.from, b.to));
+          }
+          return false;
+        }
+        if (node.name === "CodeBlock" || node.name === "Frontmatter") return false;
         if (node.name !== "Table") return;
         const a = doc.lineAt(node.from);
         const b = doc.lineAt(node.to);
