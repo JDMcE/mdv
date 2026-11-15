@@ -648,6 +648,7 @@ export class Tree {
   private fileMenu(e: MouseEvent, path: string) {
     contextMenu(e.clientX, e.clientY, [
       { label: "Open in new tab", run: () => this.tabs.open(path, { background: true }) },
+      { label: "Open to the side", run: () => this.tabs.open(path, { side: true }) },
       { label: "Rename…", hint: "F2", run: () => this.rename(path) },
       { label: "Copy path", run: () => copy(path) },
       { label: "Copy wikilink", run: () => copy(isImage(path) ? embedFor(path) : linkFor(path)) },

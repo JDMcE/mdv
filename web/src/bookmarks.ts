@@ -118,7 +118,12 @@ export class BookmarksPanel {
     row.oncontextmenu = (e) => {
       e.preventDefault();
       contextMenu(e.clientX, e.clientY, [
-        ...(folder || !exists ? [] : [{ label: "Open in new tab", run: () => this.tabs.open(path, { background: true }) }]),
+        ...(folder || !exists
+          ? []
+          : [
+              { label: "Open in new tab", run: () => this.tabs.open(path, { background: true }) },
+              { label: "Open to the side", run: () => this.tabs.open(path, { side: true }) },
+            ]),
         { label: "Reveal in tree", run: () => this.tree.reveal(path, true) },
         { label: "Remove bookmark", danger: true, run: () => bookmarks.toggle(path) },
       ]);

@@ -54,23 +54,13 @@
       </aside>
       <div id="resizer"></div>
       <main id="main">
-        <div id="tabbar">
-          <button class="icon-btn" id="toggle-sidebar" title="Toggle sidebar (Ctrl+\)"><svg viewBox="0 0 16 16"><path d="M2.5 4h11M2.5 8h11M2.5 12h11"/></svg></button>
-          <div id="tabs"></div>
-          <button class="icon-btn" id="toggle-map" title="File map (Alt+M)"><svg viewBox="0 0 16 16"><path d="M2.5 3.5h7M2.5 6.5h5M2.5 9.5h7M2.5 12.5h4M12.5 2.5v11"/></svg></button>
-          <button class="icon-btn" id="open-settings" title="Settings (Ctrl+,)"></button>
-        </div>
+        <!-- Window buttons; the tab code moves them into the outer pane tab bars. -->
+        <button class="icon-btn" id="toggle-sidebar" title="Toggle sidebar (Ctrl+\)"><svg viewBox="0 0 16 16"><path d="M2.5 4h11M2.5 8h11M2.5 12h11"/></svg></button>
+        <button class="icon-btn" id="toggle-split" title="Split right (Alt+\)"><svg viewBox="0 0 16 16"><rect x="2" y="2.5" width="12" height="11" rx="1.5"/><path d="M8 2.5v11"/></svg></button>
+        <button class="icon-btn" id="toggle-map" title="File map (Alt+M)"><svg viewBox="0 0 16 16"><path d="M2.5 3.5h7M2.5 6.5h5M2.5 9.5h7M2.5 12.5h4M12.5 2.5v11"/></svg></button>
+        <button class="icon-btn" id="open-settings" title="Settings (Ctrl+,)"></button>
         <div id="workspace">
-          <div id="content">
-            <div id="editor"></div>
-            <article id="reader" class="reader"></article>
-            <div id="viewer" tabindex="-1"></div>
-            <div id="empty">
-              <img class="empty-logo" src="/logo-mark.png" alt="" width="128" height="128" />
-              <p>No file open</p>
-              <p class="hint">Pick a note from the tree, or press <kbd>Alt</kbd>+<kbd>N</kbd></p>
-            </div>
-          </div>
+          <div id="panes"></div>
           <aside id="filemap">
             <div id="outline"></div>
             <div id="scrollmap" title="Click or drag to scroll"></div>
