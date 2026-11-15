@@ -6,6 +6,7 @@ import { highlightCode, classHighlighter } from "@lezer/highlight";
 import { findLanguage } from "./codelang";
 import { rawUrl } from "./api";
 import { MAX_EMBED_DEPTH, noteText, section } from "./embeds";
+import { renderMermaid } from "./mermaid";
 import { basename, dirname, isImage, isNote, normalize, parseSize, parseWiki, stripMd, vaultFiles } from "./links";
 import { propertiesElement } from "./livepreview";
 import { settings } from "./settings";
@@ -202,6 +203,15 @@ function callouts(root: HTMLElement) {
   }
 }
 
+/** Replace ```mermaid blocks with rendered diagrams. */
+function diagrams(root: HTMLElement): Promise<void>[] {
+  return [...root.querySelectorAll<HTMLElement>("pre > code.language-mermaid")].map((code) => {
+    const box = document.createElement("div");
+    code.parentElement!.replaceWith(box);
+    return renderMermaid(box, code.textContent ?? "");
+  });
+}
+
 /** Syntax-highlight fenced code blocks (languages load on demand). */
 async function highlight(root: HTMLElement) {
   for (const code of root.querySelectorAll<HTMLElement>("pre > code[class*=language-]")) {
@@ -237,7 +247,8 @@ export function embedTitle(path: string, sub: string) {
 }
 
 /** Fill in note embeds rendered by wikilinkRule. */
-function transclude(root: HTMLElement, depth: number, chain: string[]) {
+function transclude(root: HTMLElement, depth: number, chain: string[]): Promise<void>[] {
+  const jobs: Promise<void>[] = [];
   for (const span of root.querySelectorAll<HTMLElement>("span.transclude")) {
     const path = span.dataset.path ?? "";
     const sub = span.dataset.sub ?? "";
@@ -248,8 +259,9 @@ function transclude(root: HTMLElement, depth: number, chain: string[]) {
       p?.tagName === "P" &&
       [...p.childNodes].every((n) => n === span || n.nodeName === "BR" || (n.nodeType === Node.TEXT_NODE && !n.textContent!.trim()));
     (alone ? p! : span).replaceWith(box);
-    fillEmbed(box.querySelector(".embed-body")!, path, sub, depth + 1, chain);
+    jobs.push(fillEmbed(box.querySelector(".embed-body")!, path, sub, depth + 1, chain));
   }
+  return jobs;
 }
 
 /** The frame of an embedded note: a title linking to it, and a body. */
@@ -288,11 +300,14 @@ export async function fillEmbed(body: HTMLElement, path: string, sub: string, de
   }
   const part = section(text, sub);
   if (part === null) return note(`⚠ "${sub.replace(/^#\^?/, "")}" not found in ${stripMd(basename(path))}`);
-  render(body, part, path, depth, [...chain, path]);
+  await render(body, part, path, depth, [...chain, path]);
 }
 
-/** Render `src` (the note at `path`) into `root`. `depth` > 0 inside embeds. */
-export function render(root: HTMLElement, src: string, path: string, depth = 0, chain: string[] = []) {
+/**
+ * Render `src` (the note at `path`) into `root`. `depth` > 0 inside embeds.
+ * The returned promise settles once diagrams, code highlighting and embeds are in.
+ */
+export function render(root: HTMLElement, src: string, path: string, depth = 0, chain: string[] = []): Promise<void> {
   currentPath = path;
   const { meta, body, lines } = frontmatter(src);
   const env = {};
@@ -314,13 +329,15 @@ export function render(root: HTMLElement, src: string, path: string, depth = 0, 
     root.prepend(pre);
   }
   callouts(root);
+  const jobs = diagrams(root);
   for (const pre of root.querySelectorAll("pre:not(.frontmatter)")) {
     const code = pre.querySelector("code");
     // markdown-it ends code with a newline; copy just the code.
     pre.append(copyButton(() => ((code ?? pre).textContent ?? "").replace(/\n$/, ""), "reader-copy"));
   }
-  highlight(root);
+  jobs.push(highlight(root).catch(() => {}));
   // Checkboxes in an embed carry the embedded note's line numbers.
   if (depth > 0) root.querySelectorAll<HTMLInputElement>("input.task").forEach((b) => (b.disabled = true));
-  transclude(root, depth, chain.length ? chain : [path]);
+  jobs.push(...transclude(root, depth, chain.length ? chain : [path]));
+  return Promise.all(jobs).then(() => {});
 }

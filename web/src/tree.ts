@@ -1,6 +1,7 @@
 import { api, TreeNode } from "./api";
 import { bookmarks } from "./bookmarks";
 import { isImage, isNote, isPdf, vaultFiles } from "./links";
+import { exportItems } from "./export";
 import { embedFor, linkFor } from "./livepreview";
 import { Tabs } from "./tabs";
 import { confirmBox, contextMenu, copyText, MenuItem, promptBox, toast } from "./ui";
@@ -653,6 +654,7 @@ export class Tree {
       { label: "Copy path", run: () => copy(path) },
       { label: "Copy wikilink", run: () => copy(isImage(path) ? embedFor(path) : linkFor(path)) },
       { label: bookmarks.has(path) ? "Remove bookmark" : "Bookmark", hint: "Alt+B", run: () => bookmarks.toggle(path) },
+      ...exportItems(path),
       { label: "Delete", hint: "Del", danger: true, run: () => this.remove(path) },
     ]);
   }

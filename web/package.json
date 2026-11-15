@@ -25,6 +25,7 @@
     "@lezer/highlight": "^1.2.5",
     "codemirror": "^6.0.2",
     "dompurify": "^3.4.17",
-    "markdown-it": "^14.3.3"
+    "markdown-it": "^14.3.3",
+    "mermaid": "12.2.0"
   }
 }
